@@ -7,7 +7,7 @@ RRD=test.rrd
 MIN=4
 HOUR=$((4 * 60))
 SIXM=$((60 * 24 * 180))
-if false; then
+if true; then
     rrdtool create "${RRD?}" \
 	    --start "$(date +%s -d2023-01-01)" \
 	    -s 15 \
@@ -21,13 +21,13 @@ if false; then
 	    RRA:AVERAGE:0.5:${HOUR?}:${SIXM?}
 fi
 
-if false; then
+if true; then
     sed 's/,/ /g' t.csv | while read T NR W KWH BAT STATUS; do
 	WH=$(echo "$KWH * 1000" | bc -l | sed -e 's/[.]0*$//')
 	S="$T:$W:$WH"
 	#echo $S
-	rrdtool update "${RRD?}" "${S?}" || true
-    done
+	echo "${S?}"
+    done | xargs rrdtool update "${RRD?}"
 fi
 	
 exec rrdtool graph test.png \

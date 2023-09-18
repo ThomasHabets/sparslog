@@ -10,4 +10,6 @@ set format x "%Y-%m-%d\n%H:%M:%S"
 set xdata time
 set xtics rotate
 set grid
-plot [] [0:500] 't.csv' using 1:3 w l
+plot [] [0:500] \
+     't.csv' using 1:3 w d title 'Measurements', \
+     "< ./run-average.awk size=100 t.data" using 1:2 w l lw 1 title 'Smoothed'
