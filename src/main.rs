@@ -1,6 +1,7 @@
 use anyhow::Result;
 
 use std::time::Instant;
+use std::io::Write;
 
 use log::warn;
 use rustradio::add_const::AddConst;
@@ -178,7 +179,13 @@ impl Sink<u8> for Decode {
                 //println!("bytes: {:02x?}", bytes);
                 let packet = &bytes[4..];
                 //println!("packet: {:02x?}", packet);
-                println!("{}", parsepacket(&packet));
+                let parsed = parsepacket(&packet);
+                std::fs::OpenOptions::new()
+                    .append(true)
+                    .create(true)
+                    .open("mylog3.csv")?
+                    .write(format!("{parsed}\n").as_bytes())?;
+                println!("{}", parsed);
             }
             self.pos += 1;
         }
@@ -224,8 +231,9 @@ fn main() -> Result<()> {
 
     // Source.
     //let mut src = TCPSource::new(2000)?;
-    let mut src = FileSource::new("burst.c32", false)?;
+    //let mut src = FileSource::new("burst.c32", false)?;
     //let mut src = FileSource::new("b200-868M-1024k-ofs-1s.c32", false)?;
+    let mut src = FileSource::new("several.c32", false)?;
 
     // Filter.
     let samp_rate = 1024000.0;
