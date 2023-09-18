@@ -1,5 +1,4 @@
 use anyhow::Result;
-//use tokio::io::AsyncReadExt;
 
 use rustradio::add_const::AddConst;
 use rustradio::binary_slicer::BinarySlicer;
@@ -9,79 +8,6 @@ use rustradio::quadrature_demod::QuadratureDemod;
 use rustradio::rational_resampler::RationalResampler;
 use rustradio::symbol_sync::SymbolSync;
 use rustradio::{Block, Float, Sink, Source, Stream, StreamReader};
-//use rustradio::symbol_sync::{SymbolSync,ZeroCrossing};
-/*
-type Complex = num::complex::Complex<f32>;
-
-struct StreamWriter<T> {
-    data: Vec<T>,
-}
-
-impl<T: Copy> StreamWriter<T> {
-    fn new() -> Self {
-        Self{
-            data: Vec::new(),
-        }
-    }
-    async fn write(&mut self, data: &[T]) -> Result<()> {
-        self.data.extend_from_slice(data);
-        Ok(())
-    }
-}
-
-struct TCPSource<T> {
-    stream: tokio::net::TcpStream,
-    t: T,
-}
-
-trait Sample {
-    type S;
-    fn size() -> usize;
-    fn parse(data: &[u8]) -> Result<Self::S>;
-}
-
-impl Sample for Complex {
-    type S = Complex;
-    fn size() -> usize {
-        8
-    }
-    fn parse(data: &[u8]) -> Result<Self::S> {
-        if data.len() != 8 {
-            panic!("wrong size");
-        }
-        let i = f32::from_be_bytes(data[0..4].try_into()?);
-        let q = f32::from_be_bytes(data[4..8].try_into()?);
-        Ok(Self::new(i, q))
-    }
-}
-
-impl<T: Copy + Sample<S=T> + std::fmt::Debug> TCPSource<T> {
-    async fn new(t2: T) -> Result<Self> {
-        Ok(Self{
-            t: t2,
-            stream: tokio::net::TcpStream::connect(
-            ("localhost", 2000)
-            ).await?,
-        })
-    }
-    async fn work(&mut self, w: &mut StreamWriter<T>) -> Result<()> {
-        let mut data = [0u8; 8192];
-        let n = self.stream.read(&mut data).await?;
-        let data = &data[0..n];
-        println!("Read {} bytes", data.len());
-        let mut v = Vec::new();
-        for c in 0..(n/T::size()) {
-            let a = T::size() * c;
-            let b = a + T::size();
-            v.push(T::parse(&data[a..b])?);
-        }
-        println!("… -> {} samples", v.len());
-        println!("{:?}", v.as_slice());
-        w.write(v.as_slice()).await?;
-        Ok(())
-    }
-}
-*/
 
 struct Decode {
     pos: u64,
