@@ -1,5 +1,8 @@
 use anyhow::Result;
 
+use std::time::Instant;
+
+use log::warn;
 use rustradio::add_const::AddConst;
 use rustradio::binary_slicer::BinarySlicer;
 use rustradio::file_source::FileSource;
@@ -185,18 +188,50 @@ impl Sink<u8> for Decode {
     }
 }
 
+use rustradio::{Complex, Sample, StreamWriter};
+use std::io::Read;
+struct TCPSource {
+    stream: std::net::TcpStream,
+}
+
+impl TCPSource {
+    fn new(port: u16) -> Result<Self> {
+        Ok(Self {
+            stream: std::net::TcpStream::connect(format!("127.0.0.1:{port}"))?,
+        })
+    }
+}
+
+impl Source<Complex> for TCPSource {
+    fn work(&mut self, w: &mut dyn StreamWriter<Complex>) -> Result<()> {
+        let mut buffer = vec![0; w.capacity()];
+        let n = self.stream.read(&mut buffer[..])?;
+        if n == 0 {
+            warn!("TCP connection closed?");
+            return Ok(());
+        }
+        let size = Complex::size();
+        let mut v = Vec::new();
+        for pos in (0..n).step_by(size) {
+            v.push(Complex::parse(&buffer[pos..pos + size])?);
+        }
+        w.write(&v)
+    }
+}
+
 fn main() -> Result<()> {
     println!("Hello, world!");
 
-    //let mut src = TCPSource::new(Complex::new(0.0,0.0)).await?;
-
     // Source.
+    //let mut src = TCPSource::new(2000)?;
     let mut src = FileSource::new("burst.c32", false)?;
     //let mut src = FileSource::new("b200-868M-1024k-ofs-1s.c32", false)?;
 
     // Filter.
     let samp_rate = 1024000.0;
-    let mut fir = FIRFilter::new(&rustradio::fir::low_pass(samp_rate, 50000.0, 1000.0));
+    let taps = rustradio::fir::low_pass(samp_rate, 50000.0, 1000.0);
+    println!("FIR taps: {}", taps.len());
+    let mut fir = FIRFilter::new(&taps);
 
     // Resample.
     let new_samp_rate = 200000.0;
@@ -238,14 +273,41 @@ fn main() -> Result<()> {
     let mut s7 = Stream::new(1000000);
 
     loop {
+        let st_loop = Instant::now();
+
+        let st = Instant::now();
         src.work(&mut s1)?;
+        println!("Perf: reading {} took {:?}", s1.available(), st.elapsed());
+
+        let st = Instant::now();
         fir.work(&mut s1, &mut s2)?;
+        println!("Perf: fir {} took {:?}", s1.available(), st.elapsed());
+
+        let st = Instant::now();
         rr.work(&mut s2, &mut s3)?;
+        println!("Perf: rr {} took {:?}", s2.available(), st.elapsed());
+
+        let st = Instant::now();
         quad.work(&mut s3, &mut s4)?;
+        println!("Perf: quad {} took {:?}", s3.available(), st.elapsed());
+
+        let st = Instant::now();
         add.work(&mut s4, &mut s5)?;
+        println!("Perf: add {} took {:?}", s4.available(), st.elapsed());
+
+        let st = Instant::now();
         sync.work(&mut s5, &mut s6)?;
+        println!("Perf: sync {} took {:?}", s5.available(), st.elapsed());
+
+        let st = Instant::now();
         slice.work(&mut s6, &mut s7)?;
+        println!("Perf: slice {} took {:?}", s6.available(), st.elapsed());
+
+        let st = Instant::now();
         decode.work(&mut s7)?;
+        println!("Perf: decode {} took {:?}", s7.available(), st.elapsed());
+
+        println!("Perf: loop took {:?}\n", st_loop.elapsed());
     }
     //Ok(())
 }
