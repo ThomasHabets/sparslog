@@ -155,6 +155,7 @@ impl Sink<u8> for Decode {
         ];
         //let cac = vec![1,0,1,0,1,0,1,0,1,0,1];
         let n = r.available();
+        //println!("Called with {n}");
         if n < cac.len() {
             println!("{} < {} len, sleeping", n, cac.len());
             std::thread::sleep(std::time::Duration::from_secs(1));
@@ -191,6 +192,7 @@ fn main() -> Result<()> {
 
     // Source.
     let mut src = FileSource::new("burst.c32", false)?;
+    //let mut src = FileSource::new("b200-868M-1024k-ofs-1s.c32", false)?;
 
     // Filter.
     let samp_rate = 1024000.0;
