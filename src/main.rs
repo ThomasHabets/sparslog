@@ -1,6 +1,8 @@
 use anyhow::Result;
 
 use log::debug;
+use structopt::StructOpt;
+
 use std::io::Write;
 use std::time::Instant;
 
@@ -13,13 +15,21 @@ use rustradio::rational_resampler::RationalResampler;
 use rustradio::symbol_sync::SymbolSync;
 use rustradio::{Block, Complex, Float, Sink, Source, Stream, StreamReader};
 
+#[derive(StructOpt, Debug)]
+#[structopt()]
+struct Opt {
+    #[structopt(short = "s", long = "serial")]
+    sensor_id: u32,
+}
+
 struct Decode {
     pos: u64,
+    sensor_id: u32,
 }
 
 impl Decode {
-    fn new() -> Self {
-        Self { pos: 0 }
+    fn new(sensor_id: u32) -> Self {
+        Self { pos: 0, sensor_id }
     }
 }
 
@@ -103,7 +113,7 @@ fn fix_packet(packet: &[u8]) -> Vec<u8> {
     packet.to_vec()
 }
 
-fn parsepacket(packet: &[u8]) -> String {
+fn parsepacket(packet: &[u8], sensor_id: u32) -> String {
     assert!(packet.len() == 20);
     //let sensor = packet[0];
     //let app = packet[1];
@@ -112,7 +122,6 @@ fn parsepacket(packet: &[u8]) -> String {
     // This is the correct packet.
     println!("Packet: {:02x?}", packet);
 
-    let sensor_id: u32 = 576929;
     let sensor_id_sub = {
         let magic = 0x5D38E8CB;
         if sensor_id >= magic {
@@ -187,7 +196,7 @@ impl Sink<u8> for Decode {
                 //println!("bytes: {:02x?}", bytes);
                 let packet = &bytes[4..];
                 //println!("packet: {:02x?}", packet);
-                let parsed = parsepacket(&packet);
+                let parsed = parsepacket(&packet, self.sensor_id);
                 std::fs::OpenOptions::new()
                     .append(true)
                     .create(true)
@@ -204,7 +213,8 @@ impl Sink<u8> for Decode {
 }
 
 fn main() -> Result<()> {
-    println!("Hello, world!");
+    println!("Sparslog");
+    let opt = Opt::from_args();
 
     // Source.
     let mut src: Box<dyn Source<Complex>> = {
@@ -258,7 +268,7 @@ fn main() -> Result<()> {
     let mut slice = BinarySlicer::new();
 
     // Decode.
-    let mut decode = Decode::new();
+    let mut decode = Decode::new(opt.sensor_id);
 
     let mut s1 = Stream::new(1000000);
     let mut s2 = Stream::new(1000000);
