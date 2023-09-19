@@ -210,12 +210,18 @@ fn main() -> Result<()> {
     let mut src: Box<dyn Source<Complex>> = {
         if true {
             Box::new(rustradio::tcp_source::TcpSource::new("127.0.0.1", 2000)?)
+        } else if false {
+            Box::new(FileSource::new("burst.c32", false)?)
+        } else if false {
+            Box::new(FileSource::new("b200-868M-1024k-ofs-1s.c32", false)?)
         } else {
-            //let mut src = FileSource::new("burst.c32", false)?;
-            //let mut src = FileSource::new("b200-868M-1024k-ofs-1s.c32", false)?;
             Box::new(FileSource::new("several.c32", false)?)
         }
     };
+    let mut rtlsrc = FileSource::new("/dev/stdin", false)?;
+
+    // Optional RTL decoder.
+    let mut rtlsdr = rustradio::rtlsdr::RtlSdrDecode::new();
 
     // Filter.
     let samp_rate = 1024000.0;
@@ -261,13 +267,29 @@ fn main() -> Result<()> {
     let mut s5 = Stream::new(1000000);
     let mut s6 = Stream::new(1000000);
     let mut s7 = Stream::new(1000000);
+    let mut rtl_in = Stream::new(1000000);
 
+    let rtl_decode = false;
     loop {
         let st_loop = Instant::now();
 
-        let st = Instant::now();
-        src.work(&mut s1)?;
-        debug!("Perf: reading {} took {:?}", s1.available(), st.elapsed());
+        if rtl_decode {
+            let st = Instant::now();
+            rtlsrc.work(&mut rtl_in)?;
+            debug!("Perf: read {} took {:?}", s1.available(), st.elapsed());
+
+            let st = Instant::now();
+            rtlsdr.work(&mut rtl_in, &mut s1)?;
+            debug!(
+                "Perf: rtl decode {} took {:?}",
+                s1.available(),
+                st.elapsed()
+            );
+        } else {
+            let st = Instant::now();
+            src.work(&mut s1)?;
+            debug!("Perf: reading {} took {:?}", s1.available(), st.elapsed());
+        }
 
         let st = Instant::now();
         fir.work(&mut s1, &mut s2)?;
