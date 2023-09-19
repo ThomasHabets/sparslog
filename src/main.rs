@@ -157,18 +157,19 @@ impl Sink<u8> for Decode {
             1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 1, 0, 1, 0, 0, 1, 0, 0, 0, 0, 0, 0,
             0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 1,
         ];
+        let packet_bits_len = cac.len() + 19 * 8;
         //let cac = vec![1,0,1,0,1,0,1,0,1,0,1];
         let n = r.available();
         //println!("Called with {n}");
-        if n < cac.len() {
-            println!("{} < {} len, sleeping", n, cac.len());
+        if n < packet_bits_len {
+            debug!("{} < {} len, sleeping", n, cac.len());
             std::thread::sleep(std::time::Duration::from_millis(100));
             return Ok(());
         }
         let oldpos = self.pos;
         //println!("Running on data size {n}");
         let input = r.buffer();
-        for i in 0..(n - cac.len()) {
+        for i in 0..(n - packet_bits_len) {
             if cac == input[i..(i + cac.len())] {
                 println!("Found CAC at pos {}", self.pos);
                 let bits = &input[i..(i + cac.len() + 19 * 8)];
