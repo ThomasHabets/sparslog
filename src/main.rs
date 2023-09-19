@@ -1,9 +1,8 @@
 use anyhow::Result;
 
-use std::time::Instant;
 use std::io::Write;
+use std::time::Instant;
 
-use log::warn;
 use rustradio::add_const::AddConst;
 use rustradio::binary_slicer::BinarySlicer;
 use rustradio::file_source::FileSource;
@@ -162,7 +161,7 @@ impl Sink<u8> for Decode {
         //println!("Called with {n}");
         if n < cac.len() {
             println!("{} < {} len, sleeping", n, cac.len());
-            std::thread::sleep(std::time::Duration::from_secs(1));
+            std::thread::sleep(std::time::Duration::from_millis(100));
             return Ok(());
         }
         let oldpos = self.pos;
@@ -195,49 +194,18 @@ impl Sink<u8> for Decode {
     }
 }
 
-use rustradio::{Complex, Sample, StreamWriter};
-use std::io::Read;
-struct TCPSource {
-    stream: std::net::TcpStream,
-}
-
-impl TCPSource {
-    fn new(port: u16) -> Result<Self> {
-        Ok(Self {
-            stream: std::net::TcpStream::connect(format!("127.0.0.1:{port}"))?,
-        })
-    }
-}
-
-impl Source<Complex> for TCPSource {
-    fn work(&mut self, w: &mut dyn StreamWriter<Complex>) -> Result<()> {
-        let mut buffer = vec![0; w.capacity()];
-        let n = self.stream.read(&mut buffer[..])?;
-        if n == 0 {
-            warn!("TCP connection closed?");
-            return Ok(());
-        }
-        let size = Complex::size();
-        let mut v = Vec::new();
-        for pos in (0..n).step_by(size) {
-            v.push(Complex::parse(&buffer[pos..pos + size])?);
-        }
-        w.write(&v)
-    }
-}
-
 fn main() -> Result<()> {
     println!("Hello, world!");
 
     // Source.
-    //let mut src = TCPSource::new(2000)?;
+    let mut src = rustradio::tcp_source::TcpSource::new("127.0.0.1", 2000)?;
     //let mut src = FileSource::new("burst.c32", false)?;
     //let mut src = FileSource::new("b200-868M-1024k-ofs-1s.c32", false)?;
-    let mut src = FileSource::new("several.c32", false)?;
+    //let mut src = FileSource::new("several.c32", false)?;
 
     // Filter.
     let samp_rate = 1024000.0;
-    let taps = rustradio::fir::low_pass(samp_rate, 50000.0, 1000.0);
+    let taps = rustradio::fir::low_pass(samp_rate, 50000.0, 10000.0);
     println!("FIR taps: {}", taps.len());
     let mut fir = FIRFilter::new(&taps);
 
