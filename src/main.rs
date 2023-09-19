@@ -145,8 +145,15 @@ fn parsepacket(packet: &[u8]) -> String {
     let kwh = (pulse / 1000) as f32 + ((pulse % 1000) as f32) / 1000.0;
     let battery = dec[12];
     let watt = 3600.0 * 1024.0 / (effect as f32);
+
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::SystemTime::UNIX_EPOCH)
+        .expect("Time went backwards")
+        .as_secs();
+
     format!(
-        "{seq},{watt},{kwh},{battery},{}",
+        "{},{seq},{watt},{kwh},{battery},{}",
+        now,
         if crc_ok { "OK" } else { "BAD" }
     )
 }
