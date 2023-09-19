@@ -20,16 +20,24 @@ use rustradio::{Block, Complex, Float, Sink, Source, Stream, StreamReader};
 struct Opt {
     #[structopt(short = "s", long = "serial")]
     sensor_id: u32,
+
+    #[structopt(short = "o", long = "output", default_value = "sparslog.csv")]
+    output: String,
 }
 
 struct Decode {
     pos: u64,
     sensor_id: u32,
+    output: String,
 }
 
 impl Decode {
-    fn new(sensor_id: u32) -> Self {
-        Self { pos: 0, sensor_id }
+    fn new(sensor_id: u32, output: &str) -> Self {
+        Self {
+            pos: 0,
+            sensor_id,
+            output: output.to_string(),
+        }
     }
 }
 
@@ -200,7 +208,7 @@ impl Sink<u8> for Decode {
                 std::fs::OpenOptions::new()
                     .append(true)
                     .create(true)
-                    .open("mylog3.csv")?
+                    .open(&self.output)?
                     .write(format!("{parsed}\n").as_bytes())?;
                 println!("{}", parsed);
             }
@@ -268,7 +276,7 @@ fn main() -> Result<()> {
     let mut slice = BinarySlicer::new();
 
     // Decode.
-    let mut decode = Decode::new(opt.sensor_id);
+    let mut decode = Decode::new(opt.sensor_id, &opt.output);
 
     let mut s1 = Stream::new(1000000);
     let mut s2 = Stream::new(1000000);
