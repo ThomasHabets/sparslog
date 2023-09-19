@@ -1,6 +1,6 @@
 options:
   parameters:
-    author: thompa
+    author: Thomas Habets <thomas@habets.se>
     catch_exceptions: 'True'
     category: '[GRC Hier Blocks]'
     cmake_opt: ''
@@ -22,7 +22,7 @@ options:
     run_options: prompt
     sizing_mode: fixed
     thread_safe_setters: ''
-    title: Zero
+    title: "Sparsn\xE4s source"
     window_size: (1000,1000)
   states:
     bus_sink: false
@@ -33,60 +33,45 @@ options:
     state: enabled
 
 blocks:
+- name: freq
+  id: variable
+  parameters:
+    comment: ''
+    value: '868000000'
+  states:
+    bus_sink: false
+    bus_source: false
+    bus_structure: null
+    coordinate: [216, 148.0]
+    rotation: 0
+    state: enabled
 - name: samp_rate
   id: variable
   parameters:
     comment: ''
-    value: '32000'
+    value: '1024000'
   states:
     bus_sink: false
     bus_source: false
     bus_structure: null
-    coordinate: [184, 12]
+    coordinate: [208, 84.0]
     rotation: 0
     state: enabled
-- name: analog_sig_source_x_0
-  id: analog_sig_source_x
+- name: igain
+  id: parameter
   parameters:
-    affinity: ''
     alias: ''
-    amp: '1'
     comment: ''
-    freq: '1000'
-    maxoutbuf: '0'
-    minoutbuf: '0'
-    offset: '0'
-    phase: '0'
-    samp_rate: samp_rate
-    showports: 'False'
-    type: complex
-    waveform: analog.GR_COS_WAVE
+    hide: none
+    label: ''
+    short_id: ''
+    type: ''
+    value: '30'
   states:
     bus_sink: false
     bus_source: false
     bus_structure: null
-    coordinate: [88, 228.0]
-    rotation: 0
-    state: true
-- name: blocks_throttle2_0
-  id: blocks_throttle2
-  parameters:
-    affinity: ''
-    alias: ''
-    comment: ''
-    ignoretag: 'True'
-    limit: auto
-    maximum: '0.1'
-    maxoutbuf: '0'
-    minoutbuf: '0'
-    samples_per_second: samp_rate
-    type: complex
-    vlen: '1'
-  states:
-    bus_sink: false
-    bus_source: false
-    bus_structure: null
-    coordinate: [344, 260.0]
+    coordinate: [216, 276.0]
     rotation: 0
     state: true
 - name: network_tcp_sink_0
@@ -104,13 +89,34 @@ blocks:
     bus_sink: false
     bus_source: false
     bus_structure: null
-    coordinate: [592, 260.0]
+    coordinate: [376, 212.0]
+    rotation: 0
+    state: enabled
+- name: soapy_rtlsdr_source_0
+  id: soapy_rtlsdr_source
+  parameters:
+    affinity: ''
+    agc: 'False'
+    alias: ''
+    center_freq: freq
+    comment: ''
+    dev_args: ''
+    freq_correction: '0'
+    gain: igain
+    maxoutbuf: '0'
+    minoutbuf: '0'
+    samp_rate: samp_rate
+    type: fc32
+  states:
+    bus_sink: false
+    bus_source: false
+    bus_structure: null
+    coordinate: [152, 212.0]
     rotation: 0
     state: true
 
 connections:
-- [analog_sig_source_x_0, '0', blocks_throttle2_0, '0']
-- [blocks_throttle2_0, '0', network_tcp_sink_0, '0']
+- [soapy_rtlsdr_source_0, '0', network_tcp_sink_0, '0']
 
 metadata:
   file_format: 1
