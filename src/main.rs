@@ -11,7 +11,7 @@ use rustradio::fir::FIRFilter;
 use rustradio::quadrature_demod::QuadratureDemod;
 use rustradio::rational_resampler::RationalResampler;
 use rustradio::symbol_sync::SymbolSync;
-use rustradio::{Block, Float, Sink, Source, Stream, StreamReader};
+use rustradio::{Block, Complex, Float, Sink, Source, Stream, StreamReader};
 
 struct Decode {
     pos: u64,
@@ -200,10 +200,15 @@ fn main() -> Result<()> {
     println!("Hello, world!");
 
     // Source.
-    let mut src = rustradio::tcp_source::TcpSource::new("127.0.0.1", 2000)?;
-    //let mut src = FileSource::new("burst.c32", false)?;
-    //let mut src = FileSource::new("b200-868M-1024k-ofs-1s.c32", false)?;
-    //let mut src = FileSource::new("several.c32", false)?;
+    let mut src: Box<dyn Source<Complex>> = {
+        if true {
+            Box::new(rustradio::tcp_source::TcpSource::new("127.0.0.1", 2000)?)
+        } else {
+            //let mut src = FileSource::new("burst.c32", false)?;
+            //let mut src = FileSource::new("b200-868M-1024k-ofs-1s.c32", false)?;
+            Box::new(FileSource::new("several.c32", false)?)
+        }
+    };
 
     // Filter.
     let samp_rate = 1024000.0;
@@ -228,7 +233,7 @@ fn main() -> Result<()> {
         if false {
             Box::new(SymbolSync::new(samp_rate / baud, 0.1))
         } else {
-            //let mut sync = ZeroCrossing::new(samp_rate / baud, 0.1);
+            //Box::new(ZeroCrossing::new(
             Box::new(rustradio::symbol_sync::ZeroCrossing::new(
                 samp_rate / baud,
                 0.1,
