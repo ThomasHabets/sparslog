@@ -12,4 +12,4 @@ set xtics rotate
 set grid
 plot [] [0:500] \
      't.csv' using 1:3 w d title 'Measurements', \
-     "< ./run-average.awk size=100 t.data" using 1:2 w l lw 1 title 'Smoothed'
+     "< ./run-average.awk -F, size=100 t.csv" using 1:2 w l lw 1 title 'Smoothed'
