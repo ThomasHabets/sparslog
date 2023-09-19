@@ -1,5 +1,6 @@
 use anyhow::Result;
 
+use log::debug;
 use std::io::Write;
 use std::time::Instant;
 
@@ -253,37 +254,37 @@ fn main() -> Result<()> {
 
         let st = Instant::now();
         src.work(&mut s1)?;
-        println!("Perf: reading {} took {:?}", s1.available(), st.elapsed());
+        debug!("Perf: reading {} took {:?}", s1.available(), st.elapsed());
 
         let st = Instant::now();
         fir.work(&mut s1, &mut s2)?;
-        println!("Perf: fir {} took {:?}", s1.available(), st.elapsed());
+        debug!("Perf: fir {} took {:?}", s1.available(), st.elapsed());
 
         let st = Instant::now();
         rr.work(&mut s2, &mut s3)?;
-        println!("Perf: rr {} took {:?}", s2.available(), st.elapsed());
+        debug!("Perf: rr {} took {:?}", s2.available(), st.elapsed());
 
         let st = Instant::now();
         quad.work(&mut s3, &mut s4)?;
-        println!("Perf: quad {} took {:?}", s3.available(), st.elapsed());
+        debug!("Perf: quad {} took {:?}", s3.available(), st.elapsed());
 
         let st = Instant::now();
         add.work(&mut s4, &mut s5)?;
-        println!("Perf: add {} took {:?}", s4.available(), st.elapsed());
+        debug!("Perf: add {} took {:?}", s4.available(), st.elapsed());
 
         let st = Instant::now();
         sync.work(&mut s5, &mut s6)?;
-        println!("Perf: sync {} took {:?}", s5.available(), st.elapsed());
+        debug!("Perf: sync {} took {:?}", s5.available(), st.elapsed());
 
         let st = Instant::now();
         slice.work(&mut s6, &mut s7)?;
-        println!("Perf: slice {} took {:?}", s6.available(), st.elapsed());
+        debug!("Perf: slice {} took {:?}", s6.available(), st.elapsed());
 
         let st = Instant::now();
         decode.work(&mut s7)?;
-        println!("Perf: decode {} took {:?}", s7.available(), st.elapsed());
+        debug!("Perf: decode {} took {:?}", s7.available(), st.elapsed());
 
-        println!("Perf: loop took {:?}\n", st_loop.elapsed());
+        debug!("Perf: loop took {:?}\n", st_loop.elapsed());
     }
     //Ok(())
 }
