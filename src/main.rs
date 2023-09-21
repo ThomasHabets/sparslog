@@ -8,6 +8,7 @@ use std::time::Instant;
 
 use rustradio::add_const::AddConst;
 use rustradio::binary_slicer::BinarySlicer;
+use rustradio::fft_filter::FftFilter;
 use rustradio::file_source::FileSource;
 use rustradio::fir::FIRFilter;
 use rustradio::quadrature_demod::QuadratureDemod;
@@ -29,6 +30,7 @@ struct Decode {
     pos: u64,
     sensor_id: u32,
     output: String,
+    history: Vec<u8>,
 }
 
 impl Decode {
@@ -37,6 +39,7 @@ impl Decode {
             pos: 0,
             sensor_id,
             output: output.to_string(),
+            history: Vec::new(),
         }
     }
 }
@@ -181,9 +184,11 @@ impl Sink<u8> for Decode {
             1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 1, 0, 1, 0, 0, 1, 0, 0, 0, 0, 0, 0,
             0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 1,
         ];
+        self.history.extend(r.buffer());
+        r.consume(r.available());
         let packet_bits_len = cac.len() + 19 * 8;
         //let cac = vec![1,0,1,0,1,0,1,0,1,0,1];
-        let n = r.available();
+        let n = self.history.len();
         //println!("Called with {n}");
         if n < packet_bits_len {
             debug!("{} < {} len, sleeping", n, cac.len());
@@ -192,7 +197,7 @@ impl Sink<u8> for Decode {
         }
         let oldpos = self.pos;
         //println!("Running on data size {n}");
-        let input = r.buffer();
+        let input = &self.history;
         for i in 0..(n - packet_bits_len) {
             if cac == input[i..(i + cac.len())] {
                 println!("Found CAC at pos {}", self.pos);
@@ -215,7 +220,8 @@ impl Sink<u8> for Decode {
             self.pos += 1;
         }
         self.pos = oldpos + n as u64;
-        r.consume(n);
+        self.history
+            .drain(0..(self.history.len() - packet_bits_len));
         Ok(())
     }
 }
@@ -245,7 +251,8 @@ fn main() -> Result<()> {
     let samp_rate = 1024000.0;
     let taps = rustradio::fir::low_pass(samp_rate, 50000.0, 10000.0);
     println!("FIR taps: {}", taps.len());
-    let mut fir = FIRFilter::new(&taps);
+    //let mut fir = FIRFilter::new(&taps);
+    let mut fir = FftFilter::new(&taps);
 
     // Resample.
     let new_samp_rate = 200000.0;
