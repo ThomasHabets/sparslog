@@ -34,6 +34,9 @@ struct Opt {
 
     #[structopt(long = "rtlsdr")]
     rtlsdr: bool,
+
+    #[structopt(short = "v", default_value = "0")]
+    verbose: usize,
 }
 
 struct Decode {
@@ -201,8 +204,7 @@ impl Sink<u8> for Decode {
         let n = self.history.len();
         //println!("Called with {n}");
         if n < packet_bits_len {
-            debug!("{} < {} len, sleeping", n, cac.len());
-            std::thread::sleep(std::time::Duration::from_millis(100));
+            //debug!("{} < {} len, sleeping", n, cac.len());
             return Ok(());
         }
         let oldpos = self.pos;
@@ -239,6 +241,13 @@ impl Sink<u8> for Decode {
 fn main() -> Result<()> {
     println!("Sparslog");
     let opt = Opt::from_args();
+    stderrlog::new()
+        .module(module_path!())
+        .quiet(false)
+        .verbosity(opt.verbose)
+        .timestamp(stderrlog::Timestamp::Second)
+        .init()
+        .unwrap();
 
     // Source.
     let mut src: Box<dyn Source<Complex>> = {
