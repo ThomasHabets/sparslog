@@ -4,6 +4,7 @@ use log::debug;
 use structopt::StructOpt;
 
 use std::io::Write;
+use std::net::SocketAddr;
 use std::time::Instant;
 
 use rustradio::add_const::AddConst;
@@ -24,6 +25,15 @@ struct Opt {
 
     #[structopt(short = "o", long = "output", default_value = "sparslog.csv")]
     output: String,
+
+    #[structopt(short = "c", long = "connect", default_value = "")]
+    connect: String,
+
+    #[structopt(short = "r", long = "read", default_value = "")]
+    read: String,
+
+    #[structopt(long = "rtlsdr")]
+    rtlsdr: bool,
 }
 
 struct Decode {
@@ -232,14 +242,17 @@ fn main() -> Result<()> {
 
     // Source.
     let mut src: Box<dyn Source<Complex>> = {
-        if true {
-            Box::new(rustradio::tcp_source::TcpSource::new("127.0.0.1", 2000)?)
-        } else if false {
-            Box::new(FileSource::new("burst.c32", false)?)
-        } else if false {
-            Box::new(FileSource::new("b200-868M-1024k-ofs-1s.c32", false)?)
+        if opt.connect != "" {
+            assert!(opt.read == "", "-c and -r can't both be used");
+            let sa: SocketAddr = opt.connect.parse()?;
+            let host = format!("{}", sa.ip());
+            let port = sa.port();
+            println!("Connecting to host {} port {}", host, port);
+            Box::new(rustradio::tcp_source::TcpSource::new(&host, port)?)
+        } else if opt.read != "" {
+            Box::new(FileSource::new(&opt.read, false)?)
         } else {
-            Box::new(FileSource::new("several.c32", false)?)
+            panic!("Need to provide either -r or -c");
         }
     };
     let mut rtlsrc = FileSource::new("/dev/stdin", false)?;
@@ -251,8 +264,13 @@ fn main() -> Result<()> {
     let samp_rate = 1024000.0;
     let taps = rustradio::fir::low_pass(samp_rate, 50000.0, 10000.0);
     println!("FIR taps: {}", taps.len());
-    //let mut fir = FIRFilter::new(&taps);
-    let mut fir = FftFilter::new(&taps);
+    let mut fir: Box<dyn Block<Complex, Complex>> = {
+        if false {
+            Box::new(FIRFilter::new(&taps))
+        } else {
+            Box::new(FftFilter::new(&taps))
+        }
+    };
 
     // Resample.
     let new_samp_rate = 200000.0;
@@ -294,11 +312,10 @@ fn main() -> Result<()> {
     let mut s7 = Stream::new(1000000);
     let mut rtl_in = Stream::new(1000000);
 
-    let rtl_decode = false;
     loop {
         let st_loop = Instant::now();
 
-        if rtl_decode {
+        if opt.rtlsdr {
             let st = Instant::now();
             rtlsrc.work(&mut rtl_in)?;
             debug!("Perf: read {} took {:?}", s1.available(), st.elapsed());
