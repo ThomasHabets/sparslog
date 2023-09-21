@@ -43,7 +43,7 @@ Where `123456` is the serial number of your transmitter:
 
 ```
 $ cargo build --release
-$ ./target/release/sparslog -s 123456
+$ ./target/release/sparslog -s 123456 -c 127.0.0.1:2000
 ```
 
 It'll print stuff, and log to `sparslog.csv`.
