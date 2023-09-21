@@ -101,9 +101,9 @@ fn calc_crc(mut s: u8, mut reg: u16) -> u16 {
         if regbit ^ databit {
             reg = (reg << 1) ^ poly;
         } else {
-            reg = reg << 1;
+            reg <<= 1;
         }
-        s = (s << 1) & 0xff;
+        s <<= 1;
     }
     reg
 }
@@ -219,12 +219,12 @@ impl Sink<u8> for Decode {
                 //println!("bytes: {:02x?}", bytes);
                 let packet = &bytes[4..];
                 //println!("packet: {:02x?}", packet);
-                let parsed = parsepacket(&packet, self.sensor_id);
+                let parsed = parsepacket(packet, self.sensor_id);
                 std::fs::OpenOptions::new()
                     .append(true)
                     .create(true)
                     .open(&self.output)?
-                    .write(format!("{parsed}\n").as_bytes())?;
+                    .write_all(format!("{parsed}\n").as_bytes())?;
                 println!("{}", parsed);
             }
             self.pos += 1;
@@ -242,14 +242,14 @@ fn main() -> Result<()> {
 
     // Source.
     let mut src: Box<dyn Source<Complex>> = {
-        if opt.connect != "" {
-            assert!(opt.read == "", "-c and -r can't both be used");
+        if !opt.connect.is_empty() {
+            assert!(opt.read.is_empty(), "-c and -r can't both be used");
             let sa: SocketAddr = opt.connect.parse()?;
             let host = format!("{}", sa.ip());
             let port = sa.port();
             println!("Connecting to host {} port {}", host, port);
             Box::new(rustradio::tcp_source::TcpSource::new(&host, port)?)
-        } else if opt.read != "" {
+        } else if !opt.read.is_empty() {
             Box::new(FileSource::new(&opt.read, false)?)
         } else {
             panic!("Need to provide either -r or -c");
