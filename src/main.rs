@@ -3,19 +3,15 @@ use anyhow::Result;
 use log::debug;
 use structopt::StructOpt;
 
+use std::collections::VecDeque;
 use std::io::Write;
 use std::net::SocketAddr;
 use std::time::Instant;
 
-use rustradio::add_const::AddConst;
-use rustradio::binary_slicer::BinarySlicer;
-use rustradio::fft_filter::FftFilter;
-use rustradio::file_source::FileSource;
-use rustradio::fir::FIRFilter;
-use rustradio::quadrature_demod::QuadratureDemod;
-use rustradio::rational_resampler::RationalResampler;
-use rustradio::symbol_sync::SymbolSync;
-use rustradio::{Block, Complex, Float, Sink, Source, Stream, StreamReader};
+use rustradio::block::{Block, BlockRet};
+use rustradio::blocks::*;
+use rustradio::stream::{InputStreams, OutputStreams, StreamType};
+use rustradio::{Complex, Error};
 
 #[derive(StructOpt, Debug)]
 #[structopt()]
@@ -43,7 +39,7 @@ struct Decode {
     pos: u64,
     sensor_id: u32,
     output: String,
-    history: Vec<u8>,
+    history: VecDeque<u8>,
 }
 
 impl Decode {
@@ -52,7 +48,7 @@ impl Decode {
             pos: 0,
             sensor_id,
             output: output.to_string(),
-            history: Vec::new(),
+            history: VecDeque::new(),
         }
     }
 }
@@ -191,29 +187,40 @@ fn parsepacket(packet: &[u8], sensor_id: u32) -> String {
     )
 }
 
-impl Sink<u8> for Decode {
-    fn work(&mut self, r: &mut dyn StreamReader<u8>) -> Result<()> {
+impl Block for Decode {
+    fn work(&mut self, r: &mut InputStreams, _w: &mut OutputStreams) -> Result<BlockRet, Error> {
         let cac = vec![
-            1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 1, 0, 1, 0, 0, 1, 0, 0, 0, 0, 0, 0,
-            0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 1,
+            1u8, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 1, 0, 1, 0, 0, 1, 0, 0, 0, 0, 0,
+            0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 1,
         ];
-        self.history.extend(r.buffer());
-        r.consume(r.available());
+        let input = rustradio::block::get_input::<u8>(r, 0);
+        self.history.extend(input.borrow().iter());
+        input.borrow_mut().clear();
+
         let packet_bits_len = cac.len() + 19 * 8;
         //let cac = vec![1,0,1,0,1,0,1,0,1,0,1];
         let n = self.history.len();
         //println!("Called with {n}");
         if n < packet_bits_len {
             //debug!("{} < {} len, sleeping", n, cac.len());
-            return Ok(());
+            return Ok(BlockRet::Ok);
         }
         let oldpos = self.pos;
         //println!("Running on data size {n}");
         let input = &self.history;
         for i in 0..(n - packet_bits_len) {
-            if cac == input[i..(i + cac.len())] {
+            let equal = cac
+                .iter()
+                .zip(input.range(i..(i + cac.len())))
+                .map(|(a, b)| a == b)
+                .all(|x| x);
+            //if &cac == input.range(i..(i + cac.len())) {
+            if equal {
                 println!("Found CAC at pos {}", self.pos);
-                let bits = &input[i..(i + cac.len() + 19 * 8)];
+                let bits = &input
+                    .range(i..(i + cac.len() + 19 * 8))
+                    .map(|e| *e)
+                    .collect::<Vec<u8>>();
                 let mut bytes = Vec::new();
                 for j in (0..bits.len()).step_by(8) {
                     bytes.push(bits2byte(&bits[j..j + 8]));
@@ -225,8 +232,10 @@ impl Sink<u8> for Decode {
                 std::fs::OpenOptions::new()
                     .append(true)
                     .create(true)
-                    .open(&self.output)?
-                    .write_all(format!("{parsed}\n").as_bytes())?;
+                    .open(&self.output)
+                    .map_err(|e| -> anyhow::Error { e.into() })?
+                    .write_all(format!("{parsed}\n").as_bytes())
+                    .map_err(|e| -> anyhow::Error { e.into() })?;
                 println!("{}", parsed);
             }
             self.pos += 1;
@@ -234,7 +243,7 @@ impl Sink<u8> for Decode {
         self.pos = oldpos + n as u64;
         self.history
             .drain(0..(self.history.len() - packet_bits_len));
-        Ok(())
+        Ok(BlockRet::Ok)
     }
 }
 
@@ -250,21 +259,22 @@ fn main() -> Result<()> {
         .unwrap();
 
     // Source.
-    let mut src: Box<dyn Source<Complex>> = {
+    let mut src: Box<dyn Block> = {
         if !opt.connect.is_empty() {
             assert!(opt.read.is_empty(), "-c and -r can't both be used");
             let sa: SocketAddr = opt.connect.parse()?;
             let host = format!("{}", sa.ip());
             let port = sa.port();
             println!("Connecting to host {} port {}", host, port);
-            Box::new(rustradio::tcp_source::TcpSource::new(&host, port)?)
-        } else if !opt.read.is_empty() {
-            Box::new(FileSource::new(&opt.read, false)?)
+            Box::new(TcpSource::<Complex>::new(&host, port)?)
+        } else if !opt.read.is_empty() && !opt.rtlsdr {
+            Box::new(FileSource::<Complex>::new(&opt.read, false)?)
+        } else if !opt.read.is_empty() && opt.rtlsdr {
+            Box::new(FileSource::<u8>::new(&opt.read, false)?)
         } else {
             panic!("Need to provide either -r or -c");
         }
     };
-    let mut rtlsrc = FileSource::new("/dev/stdin", false)?;
 
     // Optional RTL decoder.
     let mut rtlsdr = rustradio::rtlsdr::RtlSdrDecode::new();
@@ -273,13 +283,7 @@ fn main() -> Result<()> {
     let samp_rate = 1024000.0;
     let taps = rustradio::fir::low_pass(samp_rate, 50000.0, 10000.0);
     println!("FIR taps: {}", taps.len());
-    let mut fir: Box<dyn Block<Complex, Complex>> = {
-        if false {
-            Box::new(FIRFilter::new(&taps))
-        } else {
-            Box::new(FftFilter::new(&taps))
-        }
-    };
+    let mut fir = FftFilter::new(&taps);
 
     // Resample.
     let new_samp_rate = 200000.0;
@@ -294,17 +298,7 @@ fn main() -> Result<()> {
 
     // Clock sync.
     let baud = 38383.5;
-    let mut sync: Box<dyn Block<Float, Float>> = {
-        if false {
-            Box::new(SymbolSync::new(samp_rate / baud, 0.1))
-        } else {
-            //Box::new(ZeroCrossing::new(
-            Box::new(rustradio::symbol_sync::ZeroCrossing::new(
-                samp_rate / baud,
-                0.1,
-            ))
-        }
-    };
+    let mut sync = rustradio::symbol_sync::ZeroCrossing::new(samp_rate / baud, 0.1);
 
     // Slice.
     let mut slice = BinarySlicer::new();
@@ -312,63 +306,96 @@ fn main() -> Result<()> {
     // Decode.
     let mut decode = Decode::new(opt.sensor_id, &opt.output);
 
-    let mut s1 = Stream::new(1000000);
-    let mut s2 = Stream::new(1000000);
-    let mut s3 = Stream::new(1000000);
-    let mut s4 = Stream::new(1000000);
-    let mut s5 = Stream::new(1000000);
-    let mut s6 = Stream::new(1000000);
-    let mut s7 = Stream::new(1000000);
-    let mut rtl_in = Stream::new(1000000);
+    let stream_tcp = StreamType::new_complex();
+    let stream_filter = StreamType::new_complex();
+    let stream_resamp = StreamType::new_complex();
+    let stream_quad = StreamType::new_float();
+    let stream_add = StreamType::new_float();
+    let stream_sync = StreamType::new_float();
+    let stream_slice = StreamType::new_u8();
+    let stream_rtl = StreamType::new_u8();
 
     loop {
         let st_loop = Instant::now();
 
         if opt.rtlsdr {
             let st = Instant::now();
-            rtlsrc.work(&mut rtl_in)?;
-            debug!("Perf: read {} took {:?}", s1.available(), st.elapsed());
+            let mut is = InputStreams::new();
+            let mut os = OutputStreams::new();
+            os.add_stream(stream_rtl.clone());
+            src.work(&mut is, &mut os)?;
+            debug!("Perf: read took {:?}", st.elapsed());
 
             let st = Instant::now();
-            rtlsdr.work(&mut rtl_in, &mut s1)?;
-            debug!(
-                "Perf: rtl decode {} took {:?}",
-                s1.available(),
-                st.elapsed()
-            );
+            let mut is = InputStreams::new();
+            let mut os = OutputStreams::new();
+            is.add_stream(stream_rtl.clone());
+            os.add_stream(stream_tcp.clone());
+            rtlsdr.work(&mut is, &mut os)?;
+            debug!("Perf: rtl decode took {:?}", st.elapsed());
         } else {
             let st = Instant::now();
-            src.work(&mut s1)?;
-            debug!("Perf: reading {} took {:?}", s1.available(), st.elapsed());
+            let mut is = InputStreams::new();
+            let mut os = OutputStreams::new();
+            os.add_stream(stream_tcp.clone());
+            src.work(&mut is, &mut os)?;
+            debug!("Perf: reading took {:?}", st.elapsed());
         }
 
         let st = Instant::now();
-        fir.work(&mut s1, &mut s2)?;
-        debug!("Perf: fir {} took {:?}", s1.available(), st.elapsed());
+        let mut is = InputStreams::new();
+        let mut os = OutputStreams::new();
+        is.add_stream(stream_tcp.clone());
+        os.add_stream(stream_filter.clone());
+        fir.work(&mut is, &mut os)?;
+        debug!("Perf: filter took {:?}", st.elapsed());
 
         let st = Instant::now();
-        rr.work(&mut s2, &mut s3)?;
-        debug!("Perf: rr {} took {:?}", s2.available(), st.elapsed());
+        let mut is = InputStreams::new();
+        let mut os = OutputStreams::new();
+        is.add_stream(stream_filter.clone());
+        os.add_stream(stream_resamp.clone());
+        rr.work(&mut is, &mut os)?;
+        debug!("Perf: rr took {:?}", st.elapsed());
 
         let st = Instant::now();
-        quad.work(&mut s3, &mut s4)?;
-        debug!("Perf: quad {} took {:?}", s3.available(), st.elapsed());
+        let mut is = InputStreams::new();
+        let mut os = OutputStreams::new();
+        is.add_stream(stream_resamp.clone());
+        os.add_stream(stream_quad.clone());
+        quad.work(&mut is, &mut os)?;
+        debug!("Perf: quad took {:?}", st.elapsed());
 
         let st = Instant::now();
-        add.work(&mut s4, &mut s5)?;
-        debug!("Perf: add {} took {:?}", s4.available(), st.elapsed());
+        let mut is = InputStreams::new();
+        let mut os = OutputStreams::new();
+        is.add_stream(stream_quad.clone());
+        os.add_stream(stream_add.clone());
+        add.work(&mut is, &mut os)?;
+        debug!("Perf: add took {:?}", st.elapsed());
 
         let st = Instant::now();
-        sync.work(&mut s5, &mut s6)?;
-        debug!("Perf: sync {} took {:?}", s5.available(), st.elapsed());
+        let mut is = InputStreams::new();
+        let mut os = OutputStreams::new();
+        is.add_stream(stream_add.clone());
+        os.add_stream(stream_sync.clone());
+        sync.work(&mut is, &mut os)?;
+        debug!("Perf: sync took {:?}", st.elapsed());
 
         let st = Instant::now();
-        slice.work(&mut s6, &mut s7)?;
-        debug!("Perf: slice {} took {:?}", s6.available(), st.elapsed());
+        let mut is = InputStreams::new();
+        let mut os = OutputStreams::new();
+        is.add_stream(stream_sync.clone());
+        os.add_stream(stream_slice.clone());
+        slice.work(&mut is, &mut os)?;
+        debug!("Perf: slice took {:?}", st.elapsed());
 
         let st = Instant::now();
-        decode.work(&mut s7)?;
-        debug!("Perf: decode {} took {:?}", s7.available(), st.elapsed());
+        let mut is = InputStreams::new();
+        let mut os = OutputStreams::new();
+        is.add_stream(stream_slice.clone());
+        decode.work(&mut is, &mut os)?;
+        debug!("Perf: decode took {:?}", st.elapsed());
 
         debug!("Perf: loop took {:?}\n", st_loop.elapsed());
     }

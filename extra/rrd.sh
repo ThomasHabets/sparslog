@@ -8,6 +8,7 @@ MIN=4
 HOUR=$((4 * 60))
 SIXM=$((60 * 24 * 180))
 if true; then
+    echo "Creating rrd file…"
     rrdtool create "${RRD?}" \
 	    --start "$(date +%s -d2023-01-01)" \
 	    -s 15 \
@@ -22,6 +23,7 @@ if true; then
 fi
 
 if true; then
+    echo "Adding data…"
     sed 's/,/ /g' t.csv | while read T NR W KWH BAT STATUS; do
 	WH=$(echo "$KWH * 1000" | bc -l | sed -e 's/[.]0*$//')
 	S="$T:$W:$WH"
@@ -29,7 +31,7 @@ if true; then
 	echo "${S?}"
     done | xargs rrdtool update "${RRD?}"
 fi
-	
+echo "Graphing…"
 exec rrdtool graph test.png \
 	-z \
 	-g \
