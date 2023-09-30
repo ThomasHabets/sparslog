@@ -1,3 +1,11 @@
 /target
 *~
 gr/*.py
+*.rrd
+*.csv
+*.c32
+*.png
+__pycache__
+perf.data
+*.raw
+*.data
