@@ -6,7 +6,6 @@ use structopt::StructOpt;
 use std::collections::VecDeque;
 use std::io::Write;
 use std::net::SocketAddr;
-use std::time::Instant;
 
 use rustradio::block::{Block, BlockRet};
 use rustradio::blocks::*;
@@ -219,7 +218,7 @@ impl Block for Decode {
                 println!("Found CAC at pos {}", self.pos);
                 let bits = &input
                     .range(i..(i + cac.len() + 19 * 8))
-                    .map(|e| *e)
+                    .copied()
                     .collect::<Vec<u8>>();
                 let mut bytes = Vec::new();
                 for j in (0..bits.len()).step_by(8) {
@@ -258,146 +257,75 @@ fn main() -> Result<()> {
         .init()
         .unwrap();
 
+    let mut graph = rustradio::graph::Graph::new();
+
     // Source.
-    let mut src: Box<dyn Block> = {
+    let src = {
         if !opt.connect.is_empty() {
             assert!(opt.read.is_empty(), "-c and -r can't both be used");
             let sa: SocketAddr = opt.connect.parse()?;
             let host = format!("{}", sa.ip());
             let port = sa.port();
             println!("Connecting to host {} port {}", host, port);
-            Box::new(TcpSource::<Complex>::new(&host, port)?)
+            graph.add(Box::new(TcpSource::<Complex>::new(&host, port)?))
         } else if !opt.read.is_empty() && !opt.rtlsdr {
-            Box::new(FileSource::<Complex>::new(&opt.read, false)?)
+            graph.add(Box::new(FileSource::<Complex>::new(&opt.read, false)?))
         } else if !opt.read.is_empty() && opt.rtlsdr {
-            Box::new(FileSource::<u8>::new(&opt.read, false)?)
+            graph.add(Box::new(FileSource::<u8>::new(&opt.read, false)?))
         } else {
             panic!("Need to provide either -r or -c");
         }
     };
 
-    // Optional RTL decoder.
-    let mut rtlsdr = rustradio::rtlsdr::RtlSdrDecode::new();
-
     // Filter.
     let samp_rate = 1024000.0;
     let taps = rustradio::fir::low_pass(samp_rate, 50000.0, 10000.0);
-    println!("FIR taps: {}", taps.len());
-    let mut fir = FftFilter::new(&taps);
+    debug!("FIR taps: {}", taps.len());
+    let fir = graph.add(Box::new(FftFilter::new(&taps)));
 
     // Resample.
     let new_samp_rate = 200000.0;
-    let mut rr = RationalResampler::new(new_samp_rate as usize, samp_rate as usize)?;
+    let rr = graph.add(Box::new(RationalResampler::new(
+        new_samp_rate as usize,
+        samp_rate as usize,
+    )?));
     let samp_rate = new_samp_rate;
 
     // Quad demod.
-    let mut quad = QuadratureDemod::new(1.0);
+    let quad = graph.add(Box::new(QuadratureDemod::new(1.0)));
 
     // Frequency adjust.
-    let mut add = AddConst::new(0.4);
+    let add = graph.add(Box::new(AddConst::new(0.4)));
 
     // Clock sync.
     let baud = 38383.5;
-    let mut sync = rustradio::symbol_sync::ZeroCrossing::new(samp_rate / baud, 0.1);
+    let sync = graph.add(Box::new(rustradio::symbol_sync::ZeroCrossing::new(
+        samp_rate / baud,
+        0.1,
+    )));
 
     // Slice.
-    let mut slice = BinarySlicer::new();
+    let slice = graph.add(Box::new(BinarySlicer::new()));
 
     // Decode.
-    let mut decode = Decode::new(opt.sensor_id, &opt.output);
+    let decode = graph.add(Box::new(Decode::new(opt.sensor_id, &opt.output)));
 
-    let stream_tcp = StreamType::new_complex();
-    let stream_filter = StreamType::new_complex();
-    let stream_resamp = StreamType::new_complex();
-    let stream_quad = StreamType::new_float();
-    let stream_add = StreamType::new_float();
-    let stream_sync = StreamType::new_float();
-    let stream_slice = StreamType::new_u8();
-    let stream_rtl = StreamType::new_u8();
+    if opt.rtlsdr {
+        // Optional RTL decoder.
+        let rtlsdr = graph.add(Box::new(rustradio::rtlsdr::RtlSdrDecode::new()));
 
-    loop {
-        let st_loop = Instant::now();
-
-        if opt.rtlsdr {
-            let st = Instant::now();
-            let mut is = InputStreams::new();
-            let mut os = OutputStreams::new();
-            os.add_stream(stream_rtl.clone());
-            src.work(&mut is, &mut os)?;
-            debug!("Perf: read took {:?}", st.elapsed());
-
-            let st = Instant::now();
-            let mut is = InputStreams::new();
-            let mut os = OutputStreams::new();
-            is.add_stream(stream_rtl.clone());
-            os.add_stream(stream_tcp.clone());
-            rtlsdr.work(&mut is, &mut os)?;
-            debug!("Perf: rtl decode took {:?}", st.elapsed());
-        } else {
-            let st = Instant::now();
-            let mut is = InputStreams::new();
-            let mut os = OutputStreams::new();
-            os.add_stream(stream_tcp.clone());
-            src.work(&mut is, &mut os)?;
-            debug!("Perf: reading took {:?}", st.elapsed());
-        }
-
-        let st = Instant::now();
-        let mut is = InputStreams::new();
-        let mut os = OutputStreams::new();
-        is.add_stream(stream_tcp.clone());
-        os.add_stream(stream_filter.clone());
-        fir.work(&mut is, &mut os)?;
-        debug!("Perf: filter took {:?}", st.elapsed());
-
-        let st = Instant::now();
-        let mut is = InputStreams::new();
-        let mut os = OutputStreams::new();
-        is.add_stream(stream_filter.clone());
-        os.add_stream(stream_resamp.clone());
-        rr.work(&mut is, &mut os)?;
-        debug!("Perf: rr took {:?}", st.elapsed());
-
-        let st = Instant::now();
-        let mut is = InputStreams::new();
-        let mut os = OutputStreams::new();
-        is.add_stream(stream_resamp.clone());
-        os.add_stream(stream_quad.clone());
-        quad.work(&mut is, &mut os)?;
-        debug!("Perf: quad took {:?}", st.elapsed());
-
-        let st = Instant::now();
-        let mut is = InputStreams::new();
-        let mut os = OutputStreams::new();
-        is.add_stream(stream_quad.clone());
-        os.add_stream(stream_add.clone());
-        add.work(&mut is, &mut os)?;
-        debug!("Perf: add took {:?}", st.elapsed());
-
-        let st = Instant::now();
-        let mut is = InputStreams::new();
-        let mut os = OutputStreams::new();
-        is.add_stream(stream_add.clone());
-        os.add_stream(stream_sync.clone());
-        sync.work(&mut is, &mut os)?;
-        debug!("Perf: sync took {:?}", st.elapsed());
-
-        let st = Instant::now();
-        let mut is = InputStreams::new();
-        let mut os = OutputStreams::new();
-        is.add_stream(stream_sync.clone());
-        os.add_stream(stream_slice.clone());
-        slice.work(&mut is, &mut os)?;
-        debug!("Perf: slice took {:?}", st.elapsed());
-
-        let st = Instant::now();
-        let mut is = InputStreams::new();
-        let mut os = OutputStreams::new();
-        is.add_stream(stream_slice.clone());
-        decode.work(&mut is, &mut os)?;
-        debug!("Perf: decode took {:?}", st.elapsed());
-
-        debug!("Perf: loop took {:?}\n", st_loop.elapsed());
+        graph.connect(StreamType::new_u8(), src, 0, rtlsdr, 0);
+        graph.connect(StreamType::new_complex(), rtlsdr, 0, fir, 0);
+    } else {
+        graph.connect(StreamType::new_complex(), src, 0, fir, 0);
     }
-    //Ok(())
+
+    graph.connect(StreamType::new_complex(), fir, 0, rr, 0);
+    graph.connect(StreamType::new_complex(), rr, 0, quad, 0);
+    graph.connect(StreamType::new_float(), quad, 0, add, 0);
+    graph.connect(StreamType::new_float(), add, 0, sync, 0);
+    graph.connect(StreamType::new_float(), sync, 0, slice, 0);
+    graph.connect(StreamType::new_u8(), slice, 0, decode, 0);
+    graph.run()?;
+    Ok(())
 }
