@@ -251,6 +251,7 @@ fn main() -> Result<()> {
     let opt = Opt::from_args();
     stderrlog::new()
         .module(module_path!())
+        .module("rustradio")
         .quiet(false)
         .verbosity(opt.verbose)
         .timestamp(stderrlog::Timestamp::Second)
