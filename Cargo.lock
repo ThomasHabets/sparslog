@@ -399,9 +399,9 @@ dependencies = [
 
 [[package]]
 name = "rustradio"
-version = "0.2.14"
+version = "0.2.15"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2c92aaf56a2e8d2ba5fd36a314e3c0f189f47fb54c89b6e82e12b65e1ac61529"
+checksum = "593c234b5339f54ee66a950ab24601ea389a47a8d084f1fe8c267e94ca989116"
 dependencies = [
  "anyhow",
  "log",
