@@ -32,6 +32,18 @@ struct Opt {
 
     #[structopt(short = "v", default_value = "0")]
     verbose: usize,
+
+    #[structopt(long = "gain", default_value = "30")]
+    gain: f32,
+
+    #[structopt(long = "sample_rate", default_value = "1024000")]
+    sample_rate: u32,
+
+    #[structopt(long = "freq", default_value = "868000000")]
+    freq: u64,
+
+    #[structopt(long = "offset", default_value = "0.4")]
+    offset: f32,
 }
 
 struct Decode {
@@ -277,14 +289,18 @@ fn main() -> Result<()> {
         } else if !opt.read.is_empty() && opt.rtlsdr {
             graph.add(Box::new(FileSource::<u8>::new(&opt.read, false)?))
         } else if opt.rtlsdr {
-            graph.add(Box::new(RtlSdrSource::new(868000000, 1024000, 30)?))
+            graph.add(Box::new(RtlSdrSource::new(
+                opt.freq,
+                opt.sample_rate,
+                (opt.gain * 10.0) as i32,
+            )?))
         } else {
             panic!("Need to provide either -r, -c, or --rtlsdr");
         }
     };
 
     // Filter.
-    let samp_rate = 1024000.0;
+    let samp_rate = opt.sample_rate as f32;
     let taps = rustradio::fir::low_pass(samp_rate, 50000.0, 10000.0);
     debug!("FIR taps: {}", taps.len());
     let fir = graph.add(Box::new(FftFilter::new(&taps)));
@@ -301,7 +317,7 @@ fn main() -> Result<()> {
     let quad = graph.add(Box::new(QuadratureDemod::new(1.0)));
 
     // Frequency adjust.
-    let add = graph.add(Box::new(AddConst::new(0.4)));
+    let add = graph.add(Box::new(AddConst::new(opt.offset)));
 
     // Clock sync.
     let baud = 38383.5;
