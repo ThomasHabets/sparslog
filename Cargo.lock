@@ -361,6 +361,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "rtlsdr"
+version = "0.1.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "136ba5e46b0edd188e277916fed8f5a7f6810622ec49e03831244f79c7cdfb3e"
+dependencies = [
+ "libc",
+]
+
+[[package]]
 name = "rustfft"
 version = "6.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -390,13 +399,14 @@ dependencies = [
 
 [[package]]
 name = "rustradio"
-version = "0.2.7"
+version = "0.2.14"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "79003ad74a30eafc7dc00f762ae84b6eeca9fdb7cb1653b841fed6c061856a0f"
+checksum = "2c92aaf56a2e8d2ba5fd36a314e3c0f189f47fb54c89b6e82e12b65e1ac61529"
 dependencies = [
  "anyhow",
  "log",
  "num",
+ "rtlsdr",
  "rustfft",
  "tempfile",
 ]

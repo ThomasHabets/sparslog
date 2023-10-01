@@ -187,6 +187,9 @@ fn parsepacket(packet: &[u8], sensor_id: u32) -> String {
 }
 
 impl Block for Decode {
+    fn block_name(&self) -> &'static str {
+        "Sparsnäs decoder"
+    }
     fn work(&mut self, r: &mut InputStreams, _w: &mut OutputStreams) -> Result<BlockRet, Error> {
         let cac = vec![
             1u8, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 1, 0, 1, 0, 0, 1, 0, 0, 0, 0, 0,
@@ -273,8 +276,10 @@ fn main() -> Result<()> {
             graph.add(Box::new(FileSource::<Complex>::new(&opt.read, false)?))
         } else if !opt.read.is_empty() && opt.rtlsdr {
             graph.add(Box::new(FileSource::<u8>::new(&opt.read, false)?))
+        } else if opt.rtlsdr {
+            graph.add(Box::new(RtlSdrSource::new(868000000, 1024000, 30)?))
         } else {
-            panic!("Need to provide either -r or -c");
+            panic!("Need to provide either -r, -c, or --rtlsdr");
         }
     };
 
@@ -327,6 +332,7 @@ fn main() -> Result<()> {
     graph.connect(StreamType::new_float(), add, 0, sync, 0);
     graph.connect(StreamType::new_float(), sync, 0, slice, 0);
     graph.connect(StreamType::new_u8(), slice, 0, decode, 0);
+    eprintln!("Running…");
     graph.run()?;
     Ok(())
 }
