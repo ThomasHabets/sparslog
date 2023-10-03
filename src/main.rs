@@ -47,7 +47,6 @@ struct Opt {
 }
 
 struct Decode {
-    pos: u64,
     sensor_id: u32,
     output: String,
     history: VecDeque<u8>,
@@ -56,7 +55,6 @@ struct Decode {
 impl Decode {
     fn new(sensor_id: u32, output: &str) -> Self {
         Self {
-            pos: 0,
             sensor_id,
             output: output.to_string(),
             history: VecDeque::new(),
@@ -219,7 +217,6 @@ impl Block for Decode {
             //debug!("{} < {} len, sleeping", n, cac.len());
             return Ok(BlockRet::Ok);
         }
-        let oldpos = self.pos;
         //println!("Running on data size {n}");
         let input = &self.history;
         for i in 0..(n - packet_bits_len) {
@@ -230,7 +227,7 @@ impl Block for Decode {
                 .all(|x| x);
             //if &cac == input.range(i..(i + cac.len())) {
             if equal {
-                println!("Found CAC at pos {}", self.pos);
+                debug!("Found CAC");
                 let bits = &input
                     .range(i..(i + cac.len() + 19 * 8))
                     .copied()
@@ -252,9 +249,7 @@ impl Block for Decode {
                     .map_err(|e| -> anyhow::Error { e.into() })?;
                 println!("{}", parsed);
             }
-            self.pos += 1;
         }
-        self.pos = oldpos + n as u64;
         self.history
             .drain(0..(self.history.len() - packet_bits_len));
         Ok(BlockRet::Ok)
