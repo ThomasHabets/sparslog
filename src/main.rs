@@ -287,7 +287,7 @@ fn main() -> Result<()> {
             graph.add(Box::new(RtlSdrSource::new(
                 opt.freq,
                 opt.sample_rate,
-                (opt.gain * 10.0) as i32,
+                opt.gain as i32,
             )?))
         } else {
             panic!("Need to provide either -r, -c, or --rtlsdr");
@@ -296,7 +296,7 @@ fn main() -> Result<()> {
 
     // Filter.
     let samp_rate = opt.sample_rate as f32;
-    let taps = rustradio::fir::low_pass(samp_rate, 50000.0, 10000.0);
+    let taps = rustradio::fir::low_pass_complex(samp_rate, 50000.0, 10000.0);
     debug!("FIR taps: {}", taps.len());
     let fir = graph.add(Box::new(FftFilter::new(&taps)));
 

@@ -9,6 +9,6 @@ edition = "2021"
 anyhow = "1.0.75"
 log = "0.4.20"
 num = "0.4.1"
-rustradio = {version="0.2.16", features=["rtlsdr"]}
+rustradio = {version="0.2.19", features=["rtlsdr"]}
 stderrlog = "0.5.4"
 structopt = "0.3.26"
