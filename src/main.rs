@@ -21,11 +21,11 @@ struct Opt {
     #[structopt(short = "o", long = "output", default_value = "sparslog.csv")]
     output: String,
 
-    #[structopt(short = "c", long = "connect", default_value = "")]
-    connect: String,
+    #[structopt(short = "c", long = "connect")]
+    connect: Option<String>,
 
-    #[structopt(short = "r", long = "read", default_value = "")]
-    read: String,
+    #[structopt(short = "r", long = "read")]
+    read: Option<String>,
 
     #[structopt(long = "rtlsdr")]
     rtlsdr: bool,
@@ -272,17 +272,19 @@ fn main() -> Result<()> {
 
     // Source.
     let src = {
-        if !opt.connect.is_empty() {
-            assert!(opt.read.is_empty(), "-c and -r can't both be used");
-            let sa: SocketAddr = opt.connect.parse()?;
+        if let Some(connect) = opt.connect {
+            assert!(matches!(opt.read, None), "-c and -r can't both be used");
+            let sa: SocketAddr = connect.parse()?;
             let host = format!("{}", sa.ip());
             let port = sa.port();
             println!("Connecting to host {} port {}", host, port);
             graph.add(Box::new(TcpSource::<Complex>::new(&host, port)?))
-        } else if !opt.read.is_empty() && !opt.rtlsdr {
-            graph.add(Box::new(FileSource::<Complex>::new(&opt.read, false)?))
-        } else if !opt.read.is_empty() && opt.rtlsdr {
-            graph.add(Box::new(FileSource::<u8>::new(&opt.read, false)?))
+        } else if let Some(read) = opt.read {
+            if opt.rtlsdr {
+                graph.add(Box::new(FileSource::<u8>::new(&read, false)?))
+            } else {
+                graph.add(Box::new(FileSource::<Complex>::new(&read, false)?))
+            }
         } else if opt.rtlsdr {
             graph.add(Box::new(RtlSdrSource::new(
                 opt.freq,
