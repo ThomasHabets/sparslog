@@ -205,7 +205,7 @@ impl Block for Decode {
             1u8, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 1, 0, 1, 0, 0, 1, 0, 0, 0, 0, 0,
             0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 1,
         ];
-        let input = rustradio::block::get_input::<u8>(r, 0);
+        let input = r.get(0);
         self.history.extend(input.borrow().iter());
         input.borrow_mut().clear();
 
