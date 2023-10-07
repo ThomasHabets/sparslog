@@ -2,7 +2,7 @@
 set -eu
 set -o pipefail
 
-RRD=test.rrd
+RRD="test.rrd"
 
 MIN=4
 HOUR=$((4 * 60))
@@ -25,19 +25,19 @@ fi
 if true; then
     LAST="$(rrdtool last "${RRD?}")"
     echo "Adding data…"
-    sed 's/,/ /g' t.csv | while read T NR W KWH BAT STATUS; do
-	if [[ $T -le ${LAST?} ]]; then
-	    continue
-	fi
-	WH=$(echo "$KWH * 1000" | bc -l | sed -e 's/[.]0*$//')
-	S="$T:$W:$WH"
-	#echo $S
-	echo "${S?}"
-    done | xargs rrdtool update "${RRD?}"
+    awk '
+BEGIN {
+  FS=","
+  OFS=":"
+}
+$1 > '"${LAST?}"' {
+  print $1, $3, $4 * 1000
+}
+' t.csv \
+	| xargs rrdtool update "${RRD?}"
 fi
 echo "Graphing…"
 exec rrdtool graph test.png \
-	-z \
 	-g \
 	-X 0 \
 	-y '50:2' \
