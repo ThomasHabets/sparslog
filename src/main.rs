@@ -345,6 +345,12 @@ fn main() -> Result<()> {
     graph.connect(StreamType::new_float(), add, 0, sync, 0);
     graph.connect(StreamType::new_float(), sync, 0, slice, 0);
     graph.connect(StreamType::new_u8(), slice, 0, decode, 0);
+    let cancel = graph.cancel_token();
+    ctrlc::set_handler(move || {
+        eprintln!("Received Ctrl+C!");
+        cancel.cancel();
+    })
+    .expect("Error setting Ctrl-C handler");
     eprintln!("Running…");
     let st = std::time::Instant::now();
     graph.run()?;
