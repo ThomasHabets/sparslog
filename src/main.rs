@@ -346,6 +346,8 @@ fn main() -> Result<()> {
     graph.connect(StreamType::new_float(), sync, 0, slice, 0);
     graph.connect(StreamType::new_u8(), slice, 0, decode, 0);
     eprintln!("Running…");
+    let st = std::time::Instant::now();
     graph.run()?;
+    eprintln!("{}", graph.generate_stats(st.elapsed()));
     Ok(())
 }
