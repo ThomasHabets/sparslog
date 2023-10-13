@@ -9,7 +9,7 @@ use std::net::SocketAddr;
 
 use rustradio::block::{Block, BlockRet};
 use rustradio::blocks::*;
-use rustradio::stream::{InputStreams, OutputStreams, StreamType};
+use rustradio::stream::Streamp;
 use rustradio::{Complex, Error};
 
 #[derive(StructOpt, Debug)]
@@ -47,14 +47,16 @@ struct Opt {
 }
 
 struct Decode {
+    src: Streamp<u8>,
     sensor_id: u32,
     output: String,
     history: VecDeque<u8>,
 }
 
 impl Decode {
-    fn new(sensor_id: u32, output: &str) -> Self {
+    fn new(src: Streamp<u8>, sensor_id: u32, output: &str) -> Self {
         Self {
+            src,
             sensor_id,
             output: output.to_string(),
             history: VecDeque::new(),
@@ -200,14 +202,17 @@ impl Block for Decode {
     fn block_name(&self) -> &'static str {
         "Sparsnäs decoder"
     }
-    fn work(&mut self, r: &mut InputStreams, _w: &mut OutputStreams) -> Result<BlockRet, Error> {
+    fn work(&mut self) -> Result<BlockRet, Error> {
         let cac = vec![
             1u8, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 1, 0, 1, 0, 0, 1, 0, 0, 0, 0, 0,
             0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 1,
         ];
-        let input = r.get(0);
-        self.history.extend(input.borrow().iter());
-        input.borrow_mut().clear();
+        let mut input = self.src.lock()?;
+        if input.is_empty() {
+            return Ok(BlockRet::Noop);
+        }
+        self.history.extend(input.iter());
+        input.clear();
 
         let packet_bits_len = cac.len() + 19 * 8;
         //let cac = vec![1,0,1,0,1,0,1,0,1,0,1];
@@ -278,19 +283,35 @@ fn main() -> Result<()> {
             let host = format!("{}", sa.ip());
             let port = sa.port();
             println!("Connecting to host {} port {}", host, port);
-            graph.add(Box::new(TcpSource::<Complex>::new(&host, port)?))
+            let t = Box::new(TcpSource::<Complex>::new(&host, port)?);
+            let ret = t.out();
+            graph.add(t);
+            ret
         } else if let Some(read) = opt.read {
             if opt.rtlsdr {
-                graph.add(Box::new(FileSource::<u8>::new(&read, false)?))
+                let src = Box::new(FileSource::<u8>::new(&read, false)?);
+                let rtlsdr = Box::new(rustradio::rtlsdr::RtlSdrDecode::new(src.out()));
+                let ret = rtlsdr.out();
+                graph.add(src);
+                graph.add(rtlsdr);
+                ret
             } else {
-                graph.add(Box::new(FileSource::<Complex>::new(&read, false)?))
+                let t = Box::new(FileSource::<Complex>::new(&read, false)?);
+                let ret = t.out();
+                graph.add(t);
+                ret
             }
         } else if opt.rtlsdr {
-            graph.add(Box::new(RtlSdrSource::new(
+            let src = Box::new(RtlSdrSource::new(
                 opt.freq,
                 opt.sample_rate,
                 opt.gain as i32,
-            )?))
+            )?);
+            let rtlsdr = Box::new(rustradio::rtlsdr::RtlSdrDecode::new(src.out()));
+            let ret = rtlsdr.out();
+            graph.add(src);
+            graph.add(rtlsdr);
+            ret
         } else {
             panic!("Need to provide either -r, -c, or --rtlsdr");
         }
@@ -300,57 +321,51 @@ fn main() -> Result<()> {
     let samp_rate = opt.sample_rate as f32;
     let taps = rustradio::fir::low_pass_complex(samp_rate, 50000.0, 10000.0);
     debug!("FIR taps: {}", taps.len());
-    let fir = graph.add(Box::new(FftFilter::new(&taps)));
+    let fir = Box::new(FftFilter::new(src, &taps));
 
     // Resample.
     let new_samp_rate = 200000.0;
-    let rr = graph.add(Box::new(RationalResampler::new(
+    let rr = Box::new(RationalResampler::new(
+        fir.out(),
         new_samp_rate as usize,
         samp_rate as usize,
-    )?));
+    )?);
     let samp_rate = new_samp_rate;
 
     // Quad demod.
-    let quad = graph.add(Box::new(QuadratureDemod::new(1.0)));
+    let quad = Box::new(QuadratureDemod::new(rr.out(), 1.0));
 
     // Frequency adjust.
-    let add = graph.add(Box::new(AddConst::new(opt.offset)));
+    let add = Box::new(AddConst::new(quad.out(), opt.offset));
 
     // Clock sync.
     let baud = 38383.5;
-    let sync = graph.add(Box::new(rustradio::symbol_sync::ZeroCrossing::new(
+    let sync = Box::new(rustradio::symbol_sync::ZeroCrossing::new(
+        add.out(),
         samp_rate / baud,
         0.1,
-    )));
+    ));
 
     // Slice.
-    let slice = graph.add(Box::new(BinarySlicer::new()));
+    let slice = Box::new(BinarySlicer::new(sync.out()));
 
     // Decode.
-    let decode = graph.add(Box::new(Decode::new(opt.sensor_id, &opt.output)));
+    let decode = Box::new(Decode::new(slice.out(), opt.sensor_id, &opt.output));
 
-    if opt.rtlsdr {
-        // Optional RTL decoder.
-        let rtlsdr = graph.add(Box::new(rustradio::rtlsdr::RtlSdrDecode::new()));
-
-        graph.connect(StreamType::new_u8(), src, 0, rtlsdr, 0);
-        graph.connect(StreamType::new_complex(), rtlsdr, 0, fir, 0);
-    } else {
-        graph.connect(StreamType::new_complex(), src, 0, fir, 0);
-    }
-
-    graph.connect(StreamType::new_complex(), fir, 0, rr, 0);
-    graph.connect(StreamType::new_complex(), rr, 0, quad, 0);
-    graph.connect(StreamType::new_float(), quad, 0, add, 0);
-    graph.connect(StreamType::new_float(), add, 0, sync, 0);
-    graph.connect(StreamType::new_float(), sync, 0, slice, 0);
-    graph.connect(StreamType::new_u8(), slice, 0, decode, 0);
     let cancel = graph.cancel_token();
     ctrlc::set_handler(move || {
         eprintln!("Received Ctrl+C!");
         cancel.cancel();
     })
     .expect("Error setting Ctrl-C handler");
+
+    graph.add(fir);
+    graph.add(rr);
+    graph.add(quad);
+    graph.add(add);
+    graph.add(sync);
+    graph.add(slice);
+    graph.add(decode);
     eprintln!("Running…");
     let st = std::time::Instant::now();
     graph.run()?;
