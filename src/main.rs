@@ -262,6 +262,15 @@ impl Block for Decode {
     }
 }
 
+macro_rules! add_block {
+    ($g:ident, $cons:expr) => {{
+        let block = Box::new($cons);
+        let out = block.out();
+        $g.add(block);
+        out
+    }};
+}
+
 fn main() -> Result<()> {
     println!("Sparslog");
     let opt = Opt::from_args();
@@ -322,37 +331,40 @@ fn main() -> Result<()> {
     let samp_rate = opt.sample_rate as f32;
     let taps = rustradio::fir::low_pass_complex(samp_rate, 50000.0, 10000.0);
     debug!("FIR taps: {}", taps.len());
-    let fir = Box::new(FftFilter::new(src, &taps));
+    let prev = add_block!(graph, FftFilter::new(src, &taps));
 
     // Resample.
     let new_samp_rate = 200_000.0;
-    let rr = Box::new(RationalResampler::new(
-        fir.out(),
-        new_samp_rate as usize,
-        samp_rate as usize,
-    )?);
+    let prev = add_block![
+        graph,
+        RationalResampler::new(prev, new_samp_rate as usize, samp_rate as usize,)?
+    ];
     let samp_rate = new_samp_rate;
 
     // Quad demod.
-    let quad = Box::new(QuadratureDemod::new(rr.out(), 1.0));
+    let prev = add_block![graph, QuadratureDemod::new(prev, 1.0)];
 
     // Frequency adjust.
-    let add = Box::new(AddConst::new(quad.out(), opt.offset));
+    let prev = add_block![graph, AddConst::new(prev, opt.offset)];
 
     // Clock sync.
     let baud = 38383.5;
-    let sync = Box::new(rustradio::symbol_sync::ZeroCrossing::new(
-        add.out(),
-        samp_rate / baud,
-        0.1,
-    ));
+    let prev = add_block![graph, ZeroCrossing::new(prev, samp_rate / baud, 0.1,)];
+
+    /*
+    // Save floats.
+    let (prev,t) = add_block![graph, Tee::new(prev)];
+    graph.add(Box::new(FileSink::new(t, "test.f32", rustradio::file_sink::Mode::Overwrite)?));
+     */
 
     // Slice.
-    let slice = Box::new(BinarySlicer::new(sync.out()));
+    let prev = add_block![graph, BinarySlicer::new(prev)];
 
     // Decode.
-    let decode = Box::new(Decode::new(slice.out(), opt.sensor_id, &opt.output));
+    let decode = Box::new(Decode::new(prev, opt.sensor_id, &opt.output));
+    graph.add(decode);
 
+    // Set up to run.
     let cancel = graph.cancel_token();
     ctrlc::set_handler(move || {
         eprintln!("Received Ctrl+C!");
@@ -360,13 +372,7 @@ fn main() -> Result<()> {
     })
     .expect("Error setting Ctrl-C handler");
 
-    graph.add(fir);
-    graph.add(rr);
-    graph.add(quad);
-    graph.add(add);
-    graph.add(sync);
-    graph.add(slice);
-    graph.add(decode);
+    // Run.
     eprintln!("Running…");
     let st = std::time::Instant::now();
     graph.run()?;
