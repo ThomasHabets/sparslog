@@ -211,6 +211,7 @@ impl Block for Decode {
         if input.is_empty() {
             return Ok(BlockRet::Noop);
         }
+        //eprintln!("Decode got {}", input.available());
         self.history.extend(input.iter());
         input.clear();
 
@@ -324,7 +325,7 @@ fn main() -> Result<()> {
     let fir = Box::new(FftFilter::new(src, &taps));
 
     // Resample.
-    let new_samp_rate = 200000.0;
+    let new_samp_rate = 200_000.0;
     let rr = Box::new(RationalResampler::new(
         fir.out(),
         new_samp_rate as usize,
