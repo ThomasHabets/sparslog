@@ -300,7 +300,7 @@ fn main() -> Result<()> {
         } else if let Some(read) = opt.read {
             if opt.rtlsdr {
                 let src = Box::new(FileSource::<u8>::new(&read, false)?);
-                let rtlsdr = Box::new(rustradio::rtlsdr::RtlSdrDecode::new(src.out()));
+                let rtlsdr = Box::new(RtlSdrDecode::new(src.out()));
                 let ret = rtlsdr.out();
                 graph.add(src);
                 graph.add(rtlsdr);
@@ -317,7 +317,7 @@ fn main() -> Result<()> {
                 opt.sample_rate,
                 opt.gain as i32,
             )?);
-            let rtlsdr = Box::new(rustradio::rtlsdr::RtlSdrDecode::new(src.out()));
+            let rtlsdr = Box::new(RtlSdrDecode::new(src.out()));
             let ret = rtlsdr.out();
             graph.add(src);
             graph.add(rtlsdr);
