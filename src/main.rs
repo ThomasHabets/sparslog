@@ -207,13 +207,16 @@ impl Block for Decode {
             1u8, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 1, 0, 1, 0, 0, 1, 0, 0, 0, 0, 0,
             0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 1,
         ];
-        let mut input = self.src.lock()?;
+        let (input, _) = self.src.read_buf()?;
         if input.is_empty() {
             return Ok(BlockRet::Noop);
         }
         //eprintln!("Decode got {}", input.available());
         self.history.extend(input.iter());
-        input.clear();
+        {
+            let n = input.len();
+            input.consume(n);
+        }
 
         let packet_bits_len = cac.len() + 19 * 8;
         //let cac = vec![1,0,1,0,1,0,1,0,1,0,1];
