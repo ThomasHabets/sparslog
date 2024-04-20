@@ -10,6 +10,7 @@ use std::net::SocketAddr;
 use rustradio::block::{Block, BlockRet};
 use rustradio::blocks::*;
 use rustradio::stream::Streamp;
+use rustradio::window::WindowType;
 use rustradio::{Complex, Error};
 
 #[derive(StructOpt, Debug)]
@@ -332,7 +333,7 @@ fn main() -> Result<()> {
 
     // Filter.
     let samp_rate = opt.sample_rate as f32;
-    let taps = rustradio::fir::low_pass_complex(samp_rate, 50000.0, 10000.0);
+    let taps = rustradio::fir::low_pass_complex(samp_rate, 50000.0, 10000.0, &WindowType::Hamming);
     debug!("FIR taps: {}", taps.len());
     let prev = add_block!(graph, FftFilter::new(src, &taps));
 
