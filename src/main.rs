@@ -203,7 +203,7 @@ impl Block for Decode {
         "Sparsnäs decoder"
     }
     fn work(&mut self) -> Result<BlockRet, Error> {
-        let cac = vec![
+        let cac = [
             1u8, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 1, 0, 1, 0, 0, 1, 0, 0, 0, 0, 0,
             0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 1,
         ];
@@ -291,7 +291,7 @@ fn main() -> Result<()> {
     // Source.
     let src = {
         if let Some(connect) = opt.connect {
-            assert!(matches!(opt.read, None), "-c and -r can't both be used");
+            assert!(opt.read.is_none(), "-c and -r can't both be used");
             let sa: SocketAddr = connect.parse()?;
             let host = format!("{}", sa.ip());
             let port = sa.port();
