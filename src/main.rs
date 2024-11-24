@@ -47,7 +47,10 @@ struct Opt {
     offset: f32,
 }
 
+#[derive(rustradio::rustradio_macros::Block)]
+#[rustradio(custom_name)]
 struct Decode {
+    #[rustradio(in)]
     src: Streamp<u8>,
     sensor_id: u32,
     output: String,
@@ -62,6 +65,9 @@ impl Decode {
             output: output.to_string(),
             history: VecDeque::new(),
         }
+    }
+    fn custom_name(&self) -> &'static str {
+        "Sparsnäs decoder"
     }
 }
 
@@ -200,9 +206,6 @@ fn parsepacket(packet: &[u8], sensor_id: u32) -> String {
 }
 
 impl Block for Decode {
-    fn block_name(&self) -> &'static str {
-        "Sparsnäs decoder"
-    }
     fn work(&mut self) -> Result<BlockRet, Error> {
         let cac = [
             1u8, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 1, 0, 1, 0, 0, 1, 0, 0, 0, 0, 0,
