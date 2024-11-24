@@ -48,24 +48,21 @@ struct Opt {
 }
 
 #[derive(rustradio::rustradio_macros::Block)]
-#[rustradio(custom_name)]
+#[rustradio(new, custom_name)]
 struct Decode {
     #[rustradio(in)]
     src: Streamp<u8>,
     sensor_id: u32,
     output: String,
-    history: VecDeque<u8>,
+
+    // As of rustradio macro 0.5.1, we need this "::" to stay in place, hence
+    // the rustfmt skip.
+    #[rustradio(default)]
+    #[rustfmt::skip]
+    history: VecDeque::<u8>,
 }
 
 impl Decode {
-    fn new(src: Streamp<u8>, sensor_id: u32, output: &str) -> Self {
-        Self {
-            src,
-            sensor_id,
-            output: output.to_string(),
-            history: VecDeque::new(),
-        }
-    }
     fn custom_name(&self) -> &'static str {
         "Sparsnäs decoder"
     }
@@ -368,7 +365,7 @@ fn main() -> Result<()> {
     let prev = add_block![graph, BinarySlicer::new(prev)];
 
     // Decode.
-    let decode = Box::new(Decode::new(prev, opt.sensor_id, &opt.output));
+    let decode = Box::new(Decode::new(prev, opt.sensor_id, opt.output.clone()));
     graph.add(decode);
 
     // Set up to run.
@@ -386,3 +383,5 @@ fn main() -> Result<()> {
     eprintln!("{}", graph.generate_stats(st.elapsed()));
     Ok(())
 }
+/* vim: textwidth=80
+ */
