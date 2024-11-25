@@ -55,11 +55,8 @@ struct Decode {
     sensor_id: u32,
     output: String,
 
-    // As of rustradio macro 0.5.1, we need this "::" to stay in place, hence
-    // the rustfmt skip.
     #[rustradio(default)]
-    #[rustfmt::skip]
-    history: VecDeque::<u8>,
+    history: VecDeque<u8>,
 }
 
 impl Decode {

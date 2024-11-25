@@ -207,9 +207,9 @@ checksum = "9007da9cacbd3e6343da136e98b0d2df013f553d35bdec8b518f07bea768e19c"
 
 [[package]]
 name = "itoa"
-version = "1.0.13"
+version = "1.0.14"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "540654e97a3f4470a492cd30ff187bc95d89557a903a2bbf112e2fae98104ef2"
+checksum = "d75a2a4b1b190afb6f5425f10f6a8f959d2ea0b9c2b1d79553551850539e4674"
 
 [[package]]
 name = "js-sys"
@@ -228,9 +228,9 @@ checksum = "bbd2bcb4c963f2ddae06a2efc7e9f3591312473c50c6685e1f298068316e66fe"
 
 [[package]]
 name = "libc"
-version = "0.2.164"
+version = "0.2.165"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "433bfe06b8c75da9b2e3fbea6e5329ff87748f0b144ef75306e674c3f6f7c13f"
+checksum = "fcb4d3d38eab6c5239a362fa8bae48c03baf980a6e7079f063942d563ef3533e"
 
 [[package]]
 name = "linux-raw-sys"
@@ -431,9 +431,9 @@ dependencies = [
 
 [[package]]
 name = "rustradio"
-version = "0.5.1"
+version = "0.5.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7bdd6b80a50b35084e1b4dce3241837bf7ffb7b8610caf22b918bee56275b71a"
+checksum = "97c37c325cbcb39e031592e4ff690bf7fe3def6a49b1d1af4284ca5706587c86"
 dependencies = [
  "anyhow",
  "errno",
@@ -451,9 +451,9 @@ dependencies = [
 
 [[package]]
 name = "rustradio_macros"
-version = "0.5.0"
+version = "0.5.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7c06c79b9acd548ca1f8b2aaf988fdc7474c2b9aa334c3fd9834bc4a9e134f36"
+checksum = "daefe3d0279008030f5a3946755e7b762d604cf67f8982ec3c79d4c8bc23f95a"
 dependencies = [
  "proc-macro2",
  "quote",
