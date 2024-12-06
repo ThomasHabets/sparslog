@@ -46,6 +46,10 @@ struct Opt {
 
     #[structopt(long = "offset", default_value = "0.4")]
     offset: f32,
+
+    /// Run multithreaded.
+    #[structopt(long)]
+    multithread: bool,
 }
 
 #[derive(rustradio::rustradio_macros::Block)]
@@ -285,7 +289,11 @@ fn main() -> Result<()> {
         .init()
         .unwrap();
 
-    let mut graph = rustradio::graph::Graph::new();
+    let mut graph: Box<dyn GraphRunner> = if opt.multithread {
+        Box::new(rustradio::mtgraph::MTGraph::new())
+    } else {
+        Box::new(rustradio::graph::Graph::new())
+    };
 
     // Source.
     let src = {
