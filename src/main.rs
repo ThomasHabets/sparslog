@@ -9,6 +9,7 @@ use std::net::SocketAddr;
 
 use rustradio::block::{Block, BlockRet};
 use rustradio::blocks::*;
+use rustradio::graph::GraphRunner;
 use rustradio::stream::Streamp;
 use rustradio::window::WindowType;
 use rustradio::{Complex, Error};
