@@ -10,7 +10,7 @@ use std::net::SocketAddr;
 use rustradio::block::{Block, BlockRet};
 use rustradio::blocks::*;
 use rustradio::graph::GraphRunner;
-use rustradio::stream::Streamp;
+use rustradio::stream::ReadStream;
 use rustradio::window::WindowType;
 use rustradio::{Complex, Error};
 
@@ -56,7 +56,7 @@ struct Opt {
 #[rustradio(new, custom_name)]
 struct Decode {
     #[rustradio(in)]
-    src: Streamp<u8>,
+    src: ReadStream<u8>,
     sensor_id: u32,
     output: String,
 
@@ -270,9 +270,8 @@ impl Block for Decode {
 
 macro_rules! add_block {
     ($g:ident, $cons:expr) => {{
-        let block = Box::new($cons);
-        let out = block.out();
-        $g.add(block);
+        let (block, out) = $cons;
+        $g.add(Box::new(block));
         out
     }};
 }
@@ -303,35 +302,27 @@ fn main() -> Result<()> {
             let host = format!("{}", sa.ip());
             let port = sa.port();
             println!("Connecting to host {} port {}", host, port);
-            let t = Box::new(TcpSource::<Complex>::new(&host, port)?);
-            let ret = t.out();
-            graph.add(t);
-            ret
+            let (block, out) = TcpSource::<Complex>::new(&host, port)?;
+            graph.add(Box::new(block));
+            out
         } else if let Some(read) = opt.read {
             if opt.rtlsdr {
-                let src = Box::new(FileSource::<u8>::new(&read, false)?);
-                let rtlsdr = Box::new(RtlSdrDecode::new(src.out()));
-                let ret = rtlsdr.out();
-                graph.add(src);
-                graph.add(rtlsdr);
-                ret
+                let (src, out) = FileSource::<u8>::new(&read, false)?;
+                let (rtlsdr, out) = RtlSdrDecode::new(out);
+                graph.add(Box::new(src));
+                graph.add(Box::new(rtlsdr));
+                out
             } else {
-                let t = Box::new(FileSource::<Complex>::new(&read, false)?);
-                let ret = t.out();
-                graph.add(t);
-                ret
+                let (t, out) = FileSource::<Complex>::new(&read, false)?;
+                graph.add(Box::new(t));
+                out
             }
         } else if opt.rtlsdr {
-            let src = Box::new(RtlSdrSource::new(
-                opt.freq,
-                opt.sample_rate,
-                opt.gain as i32,
-            )?);
-            let rtlsdr = Box::new(RtlSdrDecode::new(src.out()));
-            let ret = rtlsdr.out();
-            graph.add(src);
-            graph.add(rtlsdr);
-            ret
+            let (src, out) = RtlSdrSource::new(opt.freq, opt.sample_rate, opt.gain as i32)?;
+            let (rtlsdr, out) = RtlSdrDecode::new(out);
+            graph.add(Box::new(src));
+            graph.add(Box::new(rtlsdr));
+            out
         } else {
             panic!("Need to provide either -r, -c, or --rtlsdr");
         }
