@@ -536,9 +536,9 @@ dependencies = [
 
 [[package]]
 name = "rustradio"
-version = "0.8.0"
+version = "0.8.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4e410aa5aa68ca3fd7d294a1e988f941774bce83f8f3df1b7ccad8d746cea7e0"
+checksum = "ce774bc6072cb0a9b35f7a9dd361ffe69b2d10087c6e475afd72df0a66c14966"
 dependencies = [
  "anyhow",
  "errno",
@@ -557,9 +557,9 @@ dependencies = [
 
 [[package]]
 name = "rustradio_macros"
-version = "0.8.0"
+version = "0.8.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a20abda83982fd249e9d35b4cf0d17f15bc6c38f41247ffd42a8dee8ed4bdc25"
+checksum = "815dff2ad54ade42508e5bd873535b5202b088c7412b05f5fe53fc14d2aeae26"
 dependencies = [
  "paste",
  "proc-macro2",
