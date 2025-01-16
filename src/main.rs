@@ -1,7 +1,7 @@
 use anyhow::Result;
 
+use clap::Parser;
 use log::debug;
-use structopt::StructOpt;
 
 use std::collections::VecDeque;
 use std::io::Write;
@@ -14,41 +14,41 @@ use rustradio::stream::ReadStream;
 use rustradio::window::WindowType;
 use rustradio::{Complex, Error};
 
-#[derive(StructOpt, Debug)]
-#[structopt()]
+#[derive(clap::Parser, Debug)]
+#[command(version, about)]
 struct Opt {
-    #[structopt(short = "s", long = "serial")]
+    #[arg(short, long = "serial")]
     sensor_id: u32,
 
-    #[structopt(short = "o", long = "output", default_value = "sparslog.csv")]
+    #[arg(short, long = "output", default_value = "sparslog.csv")]
     output: String,
 
-    #[structopt(short = "c", long = "connect")]
+    #[arg(short, long = "connect")]
     connect: Option<String>,
 
-    #[structopt(short = "r", long = "read")]
+    #[arg(short, long = "read")]
     read: Option<String>,
 
-    #[structopt(long = "rtlsdr")]
+    #[arg(long = "rtlsdr")]
     rtlsdr: bool,
 
-    #[structopt(short = "v", default_value = "0")]
+    #[arg(short, default_value = "0")]
     verbose: usize,
 
-    #[structopt(long = "gain", default_value = "30")]
+    #[arg(long = "gain", default_value = "30")]
     gain: f32,
 
-    #[structopt(long = "sample_rate", default_value = "1024000")]
+    #[arg(long = "sample_rate", default_value = "1024000")]
     sample_rate: u32,
 
-    #[structopt(long = "freq", default_value = "868000000")]
+    #[arg(long = "freq", default_value = "868000000")]
     freq: u64,
 
-    #[structopt(long = "offset", default_value = "0.4")]
+    #[arg(long = "offset", default_value = "0.4")]
     offset: f32,
 
     /// Run multithreaded.
-    #[structopt(long)]
+    #[arg(long)]
     multithread: bool,
 }
 
@@ -278,7 +278,7 @@ macro_rules! add_block {
 
 fn main() -> Result<()> {
     println!("Sparslog");
-    let opt = Opt::from_args();
+    let opt = Opt::parse();
     stderrlog::new()
         .module(module_path!())
         .module("rustradio")

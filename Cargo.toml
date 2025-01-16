@@ -12,4 +12,4 @@ log = "0.4.20"
 num = "0.4.1"
 rustradio = {version="0.8", features=["rtlsdr", "fast-math"]}
 stderrlog = "0.5.4"
-structopt = "0.3.26"
+clap = {version = "4", features = ["derive"]}
