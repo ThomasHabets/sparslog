@@ -328,6 +328,9 @@ fn main() -> Result<()> {
     };
 
     // Filter.
+    //
+    // TODO: doing this in multiple steps, with a decimating FIR filter, would
+    // probably be more CPU efficient.
     let samp_rate = opt.sample_rate as f32;
     let taps = rustradio::fir::low_pass_complex(samp_rate, 50000.0, 10000.0, &WindowType::Hamming);
     debug!("FIR taps: {}", taps.len());
