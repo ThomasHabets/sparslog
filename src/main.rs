@@ -235,8 +235,7 @@ impl Block for Decode {
             let equal = cac
                 .iter()
                 .zip(input.range(i..(i + cac.len())))
-                .map(|(a, b)| a == b)
-                .all(|x| x);
+                .all(|(a, b)| a == b);
             //if &cac == input.range(i..(i + cac.len())) {
             if equal {
                 debug!("Found CAC");
@@ -375,9 +374,8 @@ fn main() -> Result<()> {
 
     // Run.
     eprintln!("Running…");
-    let st = std::time::Instant::now();
     graph.run()?;
-    eprintln!("{}", graph.generate_stats(st.elapsed()));
+    eprintln!("{}", graph.generate_stats().unwrap());
     Ok(())
 }
 /* vim: textwidth=80

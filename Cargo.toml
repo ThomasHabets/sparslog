@@ -6,10 +6,10 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-anyhow = "1.0.75"
-ctrlc = "3.4.1"
-log = "0.4.20"
-num = "0.4.1"
-rustradio = {version="0.8", features=["rtlsdr", "fast-math"]}
+anyhow = "1"
+ctrlc = "3"
+log = "0.4"
+num = "0.4"
+rustradio = {version="0.10", features=["rtlsdr", "fast-math"]}
 stderrlog = "0.6"
 clap = {version = "4", features = ["derive"]}
