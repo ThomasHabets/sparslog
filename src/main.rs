@@ -72,13 +72,13 @@ impl Decode {
 
 fn bits2byte(data: &[u8]) -> u8 {
     assert!(data.len() == 8);
-    data[0] << 7
-        | data[1] << 6
-        | data[2] << 5
-        | data[3] << 4
-        | data[4] << 3
-        | data[5] << 2
-        | data[6] << 1
+    (data[0] << 7)
+        | (data[1] << 6)
+        | (data[2] << 5)
+        | (data[3] << 4)
+        | (data[4] << 3)
+        | (data[5] << 2)
+        | (data[6] << 1)
         | data[7]
 }
 
@@ -135,7 +135,7 @@ fn crc16(input: &[u8], expected: u16) -> bool {
 
 // packet: from length to and including the CRC.
 fn fix_packet(packet: &[u8]) -> Vec<u8> {
-    let crc = (packet[packet.len() - 2] as u16) << 8 | packet[packet.len() - 1] as u16;
+    let crc = ((packet[packet.len() - 2] as u16) << 8) | packet[packet.len() - 1] as u16;
     if crc16(&packet[..packet.len() - 2], crc) {
         return packet.to_vec();
     }
@@ -181,13 +181,15 @@ fn parsepacket(packet: &[u8], sensor_id: u32) -> String {
     //println!("Decoded: {:02x?}", dec);
     //let mut prep = vec![0x11];
     //prep.extend(&packet[..packet.len()-2]);
-    let crc = (packet[packet.len() - 2] as u16) << 8 | packet[packet.len() - 1] as u16;
+    let crc = ((packet[packet.len() - 2] as u16) << 8) | packet[packet.len() - 1] as u16;
     let crc_ok = crc16(&packet[..packet.len() - 2], crc);
 
-    let seq = (dec[4] as u16) << 8 | (dec[5] as u16);
-    let effect = (dec[6] as u16) << 8 | (dec[7] as u16);
-    let pulse =
-        (dec[8] as u32) << 24 | (dec[9] as u32) << 16 | (dec[10] as u32) << 8 | dec[11] as u32;
+    let seq = ((dec[4] as u16) << 8) | (dec[5] as u16);
+    let effect = ((dec[6] as u16) << 8) | (dec[7] as u16);
+    let pulse = ((dec[8] as u32) << 24)
+        | ((dec[9] as u32) << 16)
+        | ((dec[10] as u32) << 8)
+        | dec[11] as u32;
     let kwh = (pulse / 1000) as f32 + ((pulse % 1000) as f32) / 1000.0;
     let battery = dec[12];
     let watt = 3600.0 * 1024.0 / (effect as f32);
