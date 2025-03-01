@@ -315,6 +315,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7943c866cc5cd64cbc25b2e01621d07fa8eb2a1a23160ee81ce38704e97b8ecf"
 
 [[package]]
+name = "itertools"
+version = "0.14.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "2b192c782037fadd9cfa75548310488aabdbf3d2da73885b31bd0abd03351285"
+dependencies = [
+ "either",
+]
+
+[[package]]
 name = "itoa"
 version = "1.0.14"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -537,13 +546,14 @@ dependencies = [
 
 [[package]]
 name = "rustradio"
-version = "0.10.0"
+version = "0.11.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "99b8c20268729fd6920904203cb71c34de44e7a64b8704229e6589e9f0ee284e"
+checksum = "2913e90133d2a1ff01ebcee01b589329a85beeaadea2b2d266d815a4ff6ce874"
 dependencies = [
  "anyhow",
  "errno",
  "fast-math",
+ "itertools",
  "libc",
  "log",
  "num-complex",
@@ -558,9 +568,9 @@ dependencies = [
 
 [[package]]
 name = "rustradio_macros"
-version = "0.10.0"
+version = "0.11.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c2d99097f39306991d8049c702162e46e8d2f6fb0be7735957963bf7dc615eba"
+checksum = "43e5e30b1d22892dfe6ca90a6fa16279be2ab6e00647de163e12d60d7f518710"
 dependencies = [
  "paste",
  "proc-macro2",

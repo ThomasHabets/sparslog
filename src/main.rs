@@ -214,7 +214,7 @@ impl Block for Decode {
         ];
         let (input, _) = self.src.read_buf()?;
         if input.is_empty() {
-            return Ok(BlockRet::Noop);
+            return Ok(BlockRet::WaitForStream(&self.src, 1));
         }
         //eprintln!("Decode got {}", input.available());
         self.history.extend(input.iter());
