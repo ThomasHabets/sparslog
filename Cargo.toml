@@ -10,6 +10,15 @@ anyhow = "1"
 ctrlc = "3"
 log = "0.4"
 num = "0.4"
-rustradio = {version="0.13", features=["rtlsdr", "fast-math"]}
+rustradio = {version="0.13", features=["rtlsdr", "fast-math", "async"]}
 stderrlog = "0.6"
 clap = {version = "4", features = ["derive"]}
+tokio = "1.45.0"
+
+[[bin]]
+name = "sparslog"
+path = "src/main.rs"
+
+[[bin]]
+name = "sparslog-async"
+path = "src/main_async.rs"
