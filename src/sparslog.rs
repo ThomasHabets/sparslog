@@ -42,6 +42,10 @@ pub struct Opt {
 
     #[arg(long = "offset", default_value = "0.4")]
     offset: f32,
+
+    /// Run multithreaded.
+    #[arg(long)]
+    pub multithread: bool,
 }
 
 #[derive(rustradio::rustradio_macros::Block)]
@@ -269,7 +273,7 @@ macro_rules! add_block {
     }};
 }
 
-pub fn create_graph(graph: &mut impl GraphRunner, opt: &Opt) -> anyhow::Result<()> {
+pub fn create_graph(graph: &mut (impl GraphRunner + ?Sized), opt: &Opt) -> anyhow::Result<()> {
     // Source.
     let src = {
         if let Some(connect) = &opt.connect {
