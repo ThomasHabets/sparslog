@@ -22,34 +22,23 @@ very likely correct.
 You'll also need the serial number of your transmitter. It's under the
 batteries in the device that attaches to the electricity meter.
 
-## How to run
-
-This project is written in Rust, and doesn't yet have support for any
-software defined radio. So there's a GNURadio graph that just takes
-the data and shoves it out over TCP.
-
-There's a version with and without a GUI, in the `gr/` directory.
-They both listen to TCP port 2000, which the Rust tool will connect
-to.
-
-### Running the GNURadio source
-
-It's easiest to open `gr/source_gui.grc` in `gnuradio-companion`, and
-pressing play.
-
 ### Running the decoder
 
 Where `123456` is the serial number of your transmitter:
 
 ```
 $ cargo build --release
-$ ./target/release/sparslog -s 123456 -c 127.0.0.1:2000
+$ ./target/release/sparslog -s 123456 --rtlsdr
 ```
 
 It'll print stuff, and log to `sparslog.csv`.
 
 The format is
 `timestamp,sequence_number,watts,kwh,battery_status,CRC_status`
+
+## Bonus feature: A GNURadio implementation
+
+There's also a GNURadio implementation in the `gr/` directory.
 
 ## Related projects
 

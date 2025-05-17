@@ -9,3 +9,4 @@ __pycache__
 perf.data
 *.raw
 *.data
+*.swp
