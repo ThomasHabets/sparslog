@@ -229,7 +229,7 @@ impl Block for Decode {
         //println!("Called with {n}");
         if n < packet_bits_len {
             //debug!("{} < {} len, sleeping", n, cac.len());
-            return Ok(BlockRet::Ok);
+            return Ok(BlockRet::WaitForStream(&self.src, packet_bits_len - n));
         }
         //println!("Running on data size {n}");
         let input = &self.history;
@@ -257,15 +257,15 @@ impl Block for Decode {
                     .append(true)
                     .create(true)
                     .open(&self.output)
-                    .map_err(|e| -> anyhow::Error { e.into() })?
+                    .map_err(|e| -> rustradio::Error { e.into() })?
                     .write_all(format!("{parsed}\n").as_bytes())
-                    .map_err(|e| -> anyhow::Error { e.into() })?;
+                    .map_err(|e| -> rustradio::Error { e.into() })?;
                 println!("{}", parsed);
             }
         }
         self.history
             .drain(0..(self.history.len() - packet_bits_len));
-        Ok(BlockRet::Ok)
+        Ok(BlockRet::Again)
     }
 }
 
@@ -308,13 +308,13 @@ fn main() -> Result<()> {
             out
         } else if let Some(read) = opt.read {
             if opt.rtlsdr {
-                let (src, out) = FileSource::<u8>::new(&read, false)?;
+                let (src, out) = FileSource::<u8>::new(&read)?;
                 let (rtlsdr, out) = RtlSdrDecode::new(out);
                 graph.add(Box::new(src));
                 graph.add(Box::new(rtlsdr));
                 out
             } else {
-                let (t, out) = FileSource::<Complex>::new(&read, false)?;
+                let (t, out) = FileSource::<Complex>::new(&read)?;
                 graph.add(Box::new(t));
                 out
             }
