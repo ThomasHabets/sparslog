@@ -10,3 +10,4 @@ perf.data
 *.raw
 *.data
 *.swp
+data/
