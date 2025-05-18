@@ -8,7 +8,7 @@ use rustradio::blocks::*;
 use rustradio::graph::GraphRunner;
 use rustradio::stream::ReadStream;
 use rustradio::window::WindowType;
-use rustradio::{Complex, Result};
+use rustradio::{Complex, Result, blockchain};
 
 #[derive(clap::Parser, Debug)]
 #[command(version, about)]
@@ -265,14 +265,6 @@ impl Block for Decode {
     }
 }
 
-macro_rules! add_block {
-    ($g:ident, $cons:expr) => {{
-        let (block, out) = $cons;
-        $g.add(Box::new(block));
-        out
-    }};
-}
-
 pub fn create_graph(graph: &mut (impl GraphRunner + ?Sized), opt: &Opt) -> anyhow::Result<()> {
     // Source.
     let src = {
@@ -282,67 +274,51 @@ pub fn create_graph(graph: &mut (impl GraphRunner + ?Sized), opt: &Opt) -> anyho
             let host = format!("{}", sa.ip());
             let port = sa.port();
             println!("Connecting to host {} port {}", host, port);
-            let (block, out) = TcpSource::<Complex>::new(&host, port)?;
-            graph.add(Box::new(block));
-            out
+            blockchain![graph, prev, TcpSource::<Complex>::new(&host, port)?]
         } else if let Some(read) = &opt.read {
             if opt.rtlsdr {
-                let (src, out) = FileSource::<u8>::new(read)?;
-                let (rtlsdr, out) = RtlSdrDecode::new(out);
-                graph.add(Box::new(src));
-                graph.add(Box::new(rtlsdr));
-                out
+                blockchain![
+                    graph,
+                    prev,
+                    FileSource::<u8>::new(read)?,
+                    RtlSdrDecode::new(prev),
+                ]
             } else {
-                let (t, out) = FileSource::<Complex>::new(read)?;
-                graph.add(Box::new(t));
-                out
+                blockchain![graph, prev, FileSource::<Complex>::new(read)?]
             }
         } else if opt.rtlsdr {
-            let (src, out) = RtlSdrSource::new(opt.freq, opt.sample_rate, opt.gain as i32)?;
-            let (rtlsdr, out) = RtlSdrDecode::new(out);
-            graph.add(Box::new(src));
-            graph.add(Box::new(rtlsdr));
-            out
+            blockchain![
+                graph,
+                prev,
+                RtlSdrSource::new(opt.freq, opt.sample_rate, opt.gain as i32)?,
+                RtlSdrDecode::new(prev),
+            ]
         } else {
             panic!("Need to provide either -r, -c, or --rtlsdr");
         }
     };
 
-    // Filter.
-    //
-    // TODO: doing this in multiple steps, with a decimating FIR filter, would
-    // probably be more CPU efficient.
     let samp_rate = opt.sample_rate as f32;
-    let taps = rustradio::fir::low_pass_complex(samp_rate, 50000.0, 10000.0, &WindowType::Hamming);
-    debug!("FIR taps: {}", taps.len());
-    let prev = add_block!(graph, FftFilter::new(src, &taps));
-
-    // Resample.
-    let new_samp_rate = 200_000.0;
-    let prev = add_block![
-        graph,
-        RationalResampler::new(prev, new_samp_rate as usize, samp_rate as usize,)?
-    ];
-    let samp_rate = new_samp_rate;
-
-    // Quad demod.
-    let prev = add_block![graph, QuadratureDemod::new(prev, 1.0)];
-
-    // Frequency adjust.
-    let prev = add_block![graph, AddConst::new(prev, opt.offset)];
-
-    // Clock sync.
+    let samp_rate_2 = 200_000.0;
     let baud = 38383.5;
-    let prev = add_block![graph, ZeroCrossing::new(prev, samp_rate / baud, 0.1,)];
 
-    /*
-    // Save floats.
-    let (prev,t) = add_block![graph, Tee::new(prev)];
-    graph.add(Box::new(FileSink::new(t, "test.f32", rustradio::file_sink::Mode::Overwrite)?));
-     */
-
-    // Slice.
-    let prev = add_block![graph, BinarySlicer::new(prev)];
+    let prev = src;
+    // Resample.
+    let prev = blockchain![
+        graph,
+        prev,
+        // TODO: doing filtering in multiple steps, with a decimating FIR filter, would
+        // probably be more CPU efficient.
+        FftFilter::new(
+            prev,
+            rustradio::fir::low_pass_complex(samp_rate, 50000.0, 10000.0, &WindowType::Hamming)
+        ),
+        RationalResampler::new(prev, samp_rate_2 as usize, samp_rate as usize)?,
+        QuadratureDemod::new(prev, 1.0),
+        AddConst::new(prev, opt.offset),
+        ZeroCrossing::new(prev, samp_rate_2 / baud, 0.1),
+        BinarySlicer::new(prev),
+    ];
 
     // Decode.
     let decode = Box::new(Decode::new(prev, opt.sensor_id, opt.output.clone()));
