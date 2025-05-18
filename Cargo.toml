@@ -20,6 +20,7 @@ rustradio = {version="0.13", features=["rtlsdr", "fast-math", "async"]}
 stderrlog = "0.6"
 clap = {version = "4", features = ["derive"]}
 tokio = "1.45.0"
+console-subscriber = "0.4.1"
 
 [[bin]]
 name = "sparslog"
