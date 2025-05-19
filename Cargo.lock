@@ -1344,9 +1344,9 @@ dependencies = [
 
 [[package]]
 name = "rustradio"
-version = "0.14.0"
+version = "0.14.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "cad526d0bb0ce1d09f538c3bf8b7a215404c1b83951d4058c52f600e62a422ae"
+checksum = "d08ef6749f83878717647a80b29d57c17c2102a5254a167f53099a49a9ba5a2c"
 dependencies = [
  "async-trait",
  "errno",
@@ -1370,9 +1370,9 @@ dependencies = [
 
 [[package]]
 name = "rustradio_macros"
-version = "0.14.0"
+version = "0.14.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "60b14f75eef0c3c44f732fc945b05f6f7f861d124832ac7c72ca07a75f59d816"
+checksum = "879b2fa8b7be1ce2877962204c6500bf9bd8bdc408716e20a532b02b12207187"
 dependencies = [
  "paste",
  "proc-macro2",

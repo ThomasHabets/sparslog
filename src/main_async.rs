@@ -7,7 +7,10 @@ mod sparslog;
 #[tokio::main]
 async fn main() -> Result<()> {
     println!("Sparslog (async)");
-    // TODO: enable only if it won't panic: console_subscriber::init();
+
+    #[cfg(feature = "tokio-unstable")]
+    console_subscriber::init();
+
     let opt = sparslog::Opt::parse();
     stderrlog::new()
         .module(module_path!())
