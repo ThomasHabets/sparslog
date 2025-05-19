@@ -36,6 +36,17 @@ It'll print stuff, and log to `sparslog.csv`.
 The format is
 `timestamp,sequence_number,watts,kwh,battery_status,CRC_status`
 
+### Decoder with tokio-console
+
+This requires both the `tokio_unstable` config in `RUSTFLAGS` and the
+`tokio-unstable` feature.
+
+```
+$ RUSTFLAGS="--cfg tokio_unstable" cargo build \
+    -F tokio-unstable \
+    --release
+```
+
 ## Bonus feature: A GNURadio implementation
 
 There's also a GNURadio implementation in the `gr/` directory.
