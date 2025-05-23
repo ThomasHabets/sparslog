@@ -153,7 +153,7 @@ fn parsepacket(packet: &[u8], sensor_id: u32) -> String {
     let packet = fix_packet(packet);
 
     // This is the correct packet.
-    println!("Packet: {:02x?}", packet);
+    println!("Packet: {packet:02x?}");
 
     let sensor_id_sub = {
         let magic = 0x5D38E8CB;
@@ -256,7 +256,7 @@ impl Block for Decode {
                     .map_err(|e| -> rustradio::Error { e.into() })?
                     .write_all(format!("{parsed}\n").as_bytes())
                     .map_err(|e| -> rustradio::Error { e.into() })?;
-                println!("{}", parsed);
+                println!("{parsed}");
             }
         }
         self.history
@@ -273,7 +273,7 @@ pub fn create_graph(graph: &mut (impl GraphRunner + ?Sized), opt: &Opt) -> anyho
             let sa: SocketAddr = connect.parse()?;
             let host = format!("{}", sa.ip());
             let port = sa.port();
-            println!("Connecting to host {} port {}", host, port);
+            println!("Connecting to host {host} port {port}");
             blockchain![graph, prev, TcpSource::<Complex>::new(&host, port)?]
         } else if let Some(read) = &opt.read {
             if opt.rtlsdr {
