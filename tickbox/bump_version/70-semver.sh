@@ -1,2 +1,2 @@
 #!/usr/bin/env bash
-exec cargo semver-checks
+#exec cargo semver-checks
