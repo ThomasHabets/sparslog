@@ -1085,12 +1085,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "paste"
-version = "1.0.15"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "57c0d7b74b563b49d38dae00a0c37d4d6de9b432382b2892f0574ddcae73fd0a"
-
-[[package]]
 name = "percent-encoding"
 version = "2.3.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1148,9 +1142,9 @@ dependencies = [
 
 [[package]]
 name = "proc-macro2"
-version = "1.0.93"
+version = "1.0.103"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "60946a68e5f9d28b0dc1c21bb8a97ee7d018a8b322fa57838ba31cc878e22d99"
+checksum = "5ee95bc4ef87b8d5ba32e8b7714ccc834865276eab0aed5c9958d00ec45f49e8"
 dependencies = [
  "unicode-ident",
 ]
@@ -1189,9 +1183,9 @@ dependencies = [
 
 [[package]]
 name = "quote"
-version = "1.0.38"
+version = "1.0.42"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0e4dccaaaf89514f546c693ddc140f729f958c247918a13380cccc6078391acc"
+checksum = "a338cc41d27e6cc6dce6cefc13a0729dfbb81c262b1f519331575dd80ef3067f"
 dependencies = [
  "proc-macro2",
 ]
@@ -1344,12 +1338,11 @@ dependencies = [
 
 [[package]]
 name = "rustradio"
-version = "0.14.2"
+version = "0.15.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d08ef6749f83878717647a80b29d57c17c2102a5254a167f53099a49a9ba5a2c"
+checksum = "54aa7fd2f602703fdcfb67fe61885cc82b7a5053d3063fa5ca02408714523199"
 dependencies = [
  "async-trait",
- "errno",
  "fast-math",
  "itertools",
  "libc",
@@ -1370,11 +1363,22 @@ dependencies = [
 
 [[package]]
 name = "rustradio_macros"
-version = "0.14.2"
+version = "0.15.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "879b2fa8b7be1ce2877962204c6500bf9bd8bdc408716e20a532b02b12207187"
+checksum = "fc38a07408c0b8129898a38682b00fcacebe773729a114f52b19c2f2d03a08de"
 dependencies = [
- "paste",
+ "proc-macro2",
+ "quote",
+ "rustradio_macros_code",
+ "syn",
+]
+
+[[package]]
+name = "rustradio_macros_code"
+version = "0.15.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "fffe0708f1b66d2e48cf5c927d968337e9bbc749d49c235ab6baea9b67a08fed"
+dependencies = [
  "proc-macro2",
  "quote",
  "syn",
@@ -1532,9 +1536,9 @@ checksum = "7da8b5736845d9f2fcb837ea5d9e2628564b3b043a70948a3f0b778838c5fb4f"
 
 [[package]]
 name = "syn"
-version = "2.0.98"
+version = "2.0.110"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "36147f1a48ae0ec2b5b3bc5b537d267457555a10dc06f3dbc8cb11ba3006d3b1"
+checksum = "a99801b5bd34ede4cf3fc688c5919368fea4e4814a4664359503e6015b280aea"
 dependencies = [
  "proc-macro2",
  "quote",
