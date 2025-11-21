@@ -25,6 +25,7 @@ tokio = "1.45.0"
 
 [features]
 default = []
+volk = ["rustradio/volk"]
 tokio-unstable = ["tokio/tracing", "rustradio/tokio-unstable"]
 
 [[bin]]
