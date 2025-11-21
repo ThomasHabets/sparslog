@@ -175,7 +175,7 @@ fn parsepacket(packet: &[u8], sensor_id: u32) -> String {
 }
 
 impl Block for Decode {
-    fn work(&mut self) -> Result<BlockRet> {
+    fn work(&mut self) -> Result<BlockRet<'_>> {
         let cac = [
             1u8, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 1, 0, 1, 0, 0, 1, 0, 0, 0, 0, 0,
             0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 1,
