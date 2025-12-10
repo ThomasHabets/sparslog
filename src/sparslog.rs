@@ -4,7 +4,10 @@ use std::net::SocketAddr;
 
 use log::debug;
 use rustradio::block::{Block, BlockRet};
-use rustradio::blocks::*;
+use rustradio::blocks::{
+    AddConst, BinarySlicer, FftFilter, FileSource, QuadratureDemod, RationalResampler,
+    RtlSdrDecode, RtlSdrSource, TcpSource, ZeroCrossing,
+};
 use rustradio::graph::GraphRunner;
 use rustradio::stream::ReadStream;
 use rustradio::window::WindowType;
@@ -103,7 +106,7 @@ fn crc16(input: &[u8], expected: u16) -> bool {
 
 // packet: from length to and including the CRC.
 fn fix_packet(packet: &[u8]) -> Vec<u8> {
-    let crc = ((packet[packet.len() - 2] as u16) << 8) | packet[packet.len() - 1] as u16;
+    let crc = (u16::from(packet[packet.len() - 2]) << 8) | u16::from(packet[packet.len() - 1]);
     if crc16(&packet[..packet.len() - 2], crc) {
         return packet.to_vec();
     }
@@ -112,7 +115,7 @@ fn fix_packet(packet: &[u8]) -> Vec<u8> {
         let bit = 1 << (i % 8);
         test[i / 8] ^= bit;
         if crc16(&test[..packet.len() - 2], crc) {
-            return test.to_vec();
+            return test.clone();
         }
     }
     packet.to_vec()
@@ -149,18 +152,18 @@ fn parsepacket(packet: &[u8], sensor_id: u32) -> String {
     //println!("Decoded: {:02x?}", dec);
     //let mut prep = vec![0x11];
     //prep.extend(&packet[..packet.len()-2]);
-    let crc = ((packet[packet.len() - 2] as u16) << 8) | packet[packet.len() - 1] as u16;
+    let crc = (u16::from(packet[packet.len() - 2]) << 8) | u16::from(packet[packet.len() - 1]);
     let crc_ok = crc16(&packet[..packet.len() - 2], crc);
 
-    let seq = ((dec[4] as u16) << 8) | (dec[5] as u16);
-    let effect = ((dec[6] as u16) << 8) | (dec[7] as u16);
-    let pulse = ((dec[8] as u32) << 24)
-        | ((dec[9] as u32) << 16)
-        | ((dec[10] as u32) << 8)
-        | dec[11] as u32;
+    let seq = (u16::from(dec[4]) << 8) | u16::from(dec[5]);
+    let effect = (u16::from(dec[6]) << 8) | u16::from(dec[7]);
+    let pulse = (u32::from(dec[8]) << 24)
+        | (u32::from(dec[9]) << 16)
+        | (u32::from(dec[10]) << 8)
+        | u32::from(dec[11]);
     let kwh = (pulse / 1000) as f32 + ((pulse % 1000) as f32) / 1000.0;
     let battery = dec[12];
-    let watt = 3600.0 * 1024.0 / (effect as f32);
+    let watt = 3600.0 * 1024.0 / f32::from(effect);
 
     let now = std::time::SystemTime::now()
         .duration_since(std::time::SystemTime::UNIX_EPOCH)
