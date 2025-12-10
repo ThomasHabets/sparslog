@@ -2,6 +2,7 @@ use std::collections::VecDeque;
 use std::io::Write;
 use std::net::SocketAddr;
 
+use anyhow::anyhow;
 use log::debug;
 
 use rustradio::block::{Block, BlockRet};
@@ -79,6 +80,29 @@ impl Decode {
     fn custom_name(&self) -> &'static str {
         let _ = self;
         "Sparsnäs decoder"
+    }
+}
+
+#[allow(clippy::cast_precision_loss)]
+fn f32_to_i32(value: f32) -> anyhow::Result<i32> {
+    let value = f64::from(value);
+    if value.is_finite() && value >= f64::from(i32::MIN) && value <= f64::from(i32::MAX) {
+        #[allow(clippy::cast_possible_truncation)]
+        Ok(value as i32)
+    } else {
+        Err(anyhow!("invalid conversion from {value} to i32"))
+    }
+}
+
+#[allow(clippy::cast_precision_loss)]
+fn f32_to_usize(value: f32) -> anyhow::Result<usize> {
+    let value = f64::from(value);
+    if value.is_finite() && value >= 0.0 && value <= usize::MAX as f64 {
+        #[allow(clippy::cast_possible_truncation)]
+        #[allow(clippy::cast_sign_loss)]
+        Ok(value as usize)
+    } else {
+        Err(anyhow!("invalid conversion from {value} to usize"))
     }
 }
 
@@ -286,7 +310,7 @@ pub fn create_graph(graph: &mut (impl GraphRunner + ?Sized), opt: &Opt) -> anyho
             blockchain![
                 graph,
                 prev,
-                RtlSdrSource::new(opt.freq, opt.sample_rate, opt.gain as i32)?,
+                RtlSdrSource::new(opt.freq, opt.sample_rate, f32_to_i32(opt.gain)?)?,
                 RtlSdrDecode::new(prev),
             ]
         } else {
@@ -312,7 +336,7 @@ pub fn create_graph(graph: &mut (impl GraphRunner + ?Sized), opt: &Opt) -> anyho
             prev,
             rustradio::fir::low_pass_complex(samp_rate, 50000.0, 10000.0, &WindowType::Hamming)
         ),
-        RationalResampler::new(prev, samp_rate_2 as usize, samp_rate as usize)?,
+        RationalResampler::new(prev, f32_to_usize(samp_rate_2)?, f32_to_usize(samp_rate)?)?,
         QuadratureDemod::new(prev, 1.0),
         AddConst::new(prev, opt.offset),
         ZeroCrossing::new(prev, samp_rate_2 / baud, 0.1),
@@ -328,6 +352,45 @@ pub fn create_graph(graph: &mut (impl GraphRunner + ?Sized), opt: &Opt) -> anyho
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn convert_i32() -> anyhow::Result<()> {
+        for (i, o) in [
+            (0.0, 0),
+            (-1.0, -1),
+            (-1.1, -1),
+            (-1.9, -1),
+            (1.0, 1),
+            (1.1, 1),
+            (1.9, 1),
+        ] {
+            assert_eq!(f32_to_i32(i)?, o);
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn convert_usize() -> anyhow::Result<()> {
+        for (i, o) in [
+            (0.0, Some(0)),
+            (-1.0, None),
+            (-1.1, None),
+            (1.0, Some(1)),
+            (1.1, Some(1)),
+            (1.9, Some(1)),
+        ] {
+            match o {
+                None => {
+                    assert!(f32_to_usize(i).is_err());
+                }
+                Some(v) => {
+                    assert_eq!(f32_to_usize(i)?, v);
+                }
+            }
+        }
+        Ok(())
+    }
+
     #[test]
     fn decode() {
         let packet = vec![
