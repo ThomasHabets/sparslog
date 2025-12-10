@@ -16,33 +16,44 @@ use rustradio::{Complex, Result, blockchain};
 #[derive(clap::Parser, Debug)]
 #[command(version, about)]
 pub struct Opt {
+    /// Serial number of the sensor.
     #[arg(short, long = "serial")]
     sensor_id: u32,
 
+    /// Output file that will be appended to.
     #[arg(short, long = "output", default_value = "sparslog.csv")]
     output: String,
 
+    /// Read 32bit Complex float stream by connecting with TCP.
     #[arg(short, long = "connect")]
     connect: Option<String>,
 
+    /// Read I/Q from file. Can be combined with --rtlsdr.
     #[arg(short, long = "read")]
     read: Option<String>,
 
+    /// Read from RTLSDR dongle, or in its format from a file when used with
+    /// --read.
     #[arg(long = "rtlsdr")]
     rtlsdr: bool,
 
+    /// Verbosity level.
     #[arg(short, default_value = "0")]
     pub verbose: usize,
 
+    /// Input gain. Used with --rtlsdr.
     #[arg(long = "gain", default_value = "30")]
     gain: f32,
 
-    #[arg(long = "sample_rate", default_value = "1024000")]
+    /// Sample rate in file or with dongle.
+    #[arg(long = "sample_rate", default_value_t = 1_024_000)]
     sample_rate: u32,
 
-    #[arg(long = "freq", default_value = "868000000")]
+    /// Frequency to tune to, in Hz.
+    #[arg(long = "freq", default_value_t = 868_000_000)]
     freq: u64,
 
+    /// FSK offset value.
     #[arg(long = "offset", default_value = "0.4")]
     offset: f32,
 
