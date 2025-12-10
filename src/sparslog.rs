@@ -3,6 +3,7 @@ use std::io::Write;
 use std::net::SocketAddr;
 
 use log::debug;
+
 use rustradio::block::{Block, BlockRet};
 use rustradio::blocks::{
     AddConst, BinarySlicer, FftFilter, FileSource, QuadratureDemod, RationalResampler,
@@ -76,6 +77,7 @@ struct Decode {
 
 impl Decode {
     fn custom_name(&self) -> &'static str {
+        let _ = self;
         "Sparsnäs decoder"
     }
 }
@@ -142,11 +144,11 @@ fn parsepacket(packet: &[u8], sensor_id: u32) -> String {
     println!("Packet: {packet:02x?}");
 
     let sensor_id_sub = {
-        let magic = 0x5D38E8CB;
+        let magic = 0x5D38_E8CB;
         if sensor_id >= magic {
             sensor_id - magic
         } else {
-            4294967295 - (magic - sensor_id - 1)
+            4_294_967_295 - (magic - sensor_id - 1)
         }
     };
     let enc_key = [
@@ -168,12 +170,13 @@ fn parsepacket(packet: &[u8], sensor_id: u32) -> String {
 
     let seq = (u16::from(dec[4]) << 8) | u16::from(dec[5]);
     let effect = (u16::from(dec[6]) << 8) | u16::from(dec[7]);
-    let pulse = (u32::from(dec[8]) << 24)
+    let wh = (u32::from(dec[8]) << 24)
         | (u32::from(dec[9]) << 16)
         | (u32::from(dec[10]) << 8)
         | u32::from(dec[11]);
-    let kwh = (pulse / 1000) as f32 + ((pulse % 1000) as f32) / 1000.0;
+    let kwh = format!("{}.{:03}", wh / 1000, wh % 1000);
     let battery = dec[12];
+
     let watt = 3600.0 * 1024.0 / f32::from(effect);
 
     let now = std::time::SystemTime::now()
@@ -182,7 +185,7 @@ fn parsepacket(packet: &[u8], sensor_id: u32) -> String {
         .as_secs();
 
     format!(
-        "{},{seq},{watt},{kwh},{battery},{}",
+        "{},{seq},{watt:.3},{kwh},{battery},{}",
         now,
         if crc_ok { "OK" } else { "BAD" }
     )
@@ -251,11 +254,18 @@ impl Block for Decode {
     }
 }
 
+/// Create the graph to decode sparsnäs.
+///
+/// # Errors
+///
+/// If given incompatible cmdline options.
 pub fn create_graph(graph: &mut (impl GraphRunner + ?Sized), opt: &Opt) -> anyhow::Result<()> {
     // Source.
     let src = {
         if let Some(connect) = &opt.connect {
-            assert!(opt.read.is_none(), "-c and -r can't both be used");
+            if opt.read.is_some() {
+                return Err(anyhow::Error::msg("-c and -r can't be combined"));
+            }
             let sa: SocketAddr = connect.parse()?;
             let host = format!("{}", sa.ip());
             let port = sa.port();
@@ -280,10 +290,13 @@ pub fn create_graph(graph: &mut (impl GraphRunner + ?Sized), opt: &Opt) -> anyho
                 RtlSdrDecode::new(prev),
             ]
         } else {
-            panic!("Need to provide either -r, -c, or --rtlsdr");
+            return Err(anyhow::Error::msg(
+                "Need to provide either -r, -c, or --rtlsdr",
+            ));
         }
     };
 
+    #[allow(clippy::cast_precision_loss)]
     let samp_rate = opt.sample_rate as f32;
     let samp_rate_2 = 200_000.0;
     let baud = 38383.5;
@@ -321,20 +334,26 @@ mod tests {
             0x11, 0xa1, 0x38, 0x07, 0x0e, 0xa2, 0xde, 0x29, 0xe6, 0x8b, 0x1a, 0xfd, 0x74, 0x47,
             0xcf, 0xf2, 0x14, 0x80, 0x23, 0x7b,
         ];
-        assert!(parsepacket(&packet, 576929).ends_with(",17592,330.55954,20.674,100,OK"));
+        let got = parsepacket(&packet, 576_929);
+        let want = ",17592,330.560,20.674,100,OK";
+        assert!(got.ends_with(want), "got: {got}, want {want}");
 
         // With one bitflip.
         let packet = vec![
             0x11, 0xa1, 0x38, 0x07, 0x0e, 0xa2, 0xde, 0x29, 0xe7, 0x8b, 0x1a, 0xfd, 0x74, 0x47,
             0xcf, 0xf2, 0x14, 0x80, 0x23, 0x7b,
         ];
-        assert!(parsepacket(&packet, 576929).ends_with(",17592,330.55954,20.674,100,OK"));
+        let got = parsepacket(&packet, 576_929);
+        let want = ",17592,330.560,20.674,100,OK";
+        assert!(got.ends_with(want), "got: {got}, want {want}");
 
         // With two bitflips.
         let packet = vec![
             0x11, 0xa1, 0x38, 0x07, 0x0e, 0xa2, 0xdf, 0x29, 0xe6, 0x8b, 0x1a, 0xfd, 0x74, 0x47,
             0xcf, 0xf2, 0x14, 0x80, 0x23, 0x7a,
         ];
-        assert!(parsepacket(&packet, 576929).ends_with(",17592,330.55954,20.674,100,BAD"));
+        let got = parsepacket(&packet, 576_929);
+        let want = ",17592,330.560,20.674,100,BAD";
+        assert!(got.ends_with(want), "got: {got}, want {want}");
     }
 }
