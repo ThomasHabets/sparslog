@@ -16,7 +16,14 @@ use rustradio::window::WindowType;
 use rustradio::{Complex, Result, blockchain};
 
 #[derive(clap::Parser, Debug)]
-#[command(version, about)]
+#[command(version=concat!(
+        env!("CARGO_PKG_VERSION"),
+        "\nCommit: ",
+        env!("GIT_VERSION"),
+        // This makes the build non-reproducible.
+        // "\nBuilt at: ",
+        // env!("BUILD_TIMESTAMP"),
+        ), about)]
 pub struct Opt {
     /// Serial number of the sensor.
     #[arg(short, long = "serial")]
