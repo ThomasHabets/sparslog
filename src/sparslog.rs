@@ -29,6 +29,32 @@ static WATTS: LazyLock<prometheus::Gauge> = LazyLock::new(|| {
     metric
 });
 
+static BATTERY: LazyLock<prometheus::IntGauge> = LazyLock::new(|| {
+    let metric = prometheus::IntGauge::new(
+        "electricity_meter_battery",
+        "Battery status of electricity meter.",
+    )
+    .unwrap();
+    REGISTRY.register(Box::new(metric.clone())).unwrap();
+    metric
+});
+
+static KWH: LazyLock<prometheus::Counter> = LazyLock::new(|| {
+    let metric = prometheus::Counter::new("electricity_kwh", "Kwh counter.").unwrap();
+    REGISTRY.register(Box::new(metric.clone())).unwrap();
+    metric
+});
+
+static DECODES: LazyLock<prometheus::IntCounterVec> = LazyLock::new(|| {
+    let metric = prometheus::IntCounterVec::new(
+        prometheus::Opts::new("electricity_sparsnas_decodes", "Number of decodes."),
+        &["status"],
+    )
+    .unwrap();
+    REGISTRY.register(Box::new(metric.clone())).unwrap();
+    metric
+});
+
 #[derive(clap::Parser, Debug)]
 #[command(version=concat!(
         env!("CARGO_PKG_VERSION"),
@@ -237,12 +263,22 @@ fn parsepacket(packet: &[u8], sensor_id: u32) -> String {
         .expect("Time went backwards")
         .as_secs();
 
-    WATTS.set(watt.into());
-    format!(
-        "{},{seq},{watt:.3},{kwh},{battery},{}",
-        now,
-        if crc_ok { "OK" } else { "BAD" }
-    )
+    if crc_ok {
+        WATTS.set(watt.into());
+        BATTERY.set(battery.into());
+        if let Ok(v) = kwh.parse() {
+            let old = KWH.get();
+            if old > v {
+                KWH.reset();
+                KWH.inc_by(v);
+            } else {
+                KWH.inc_by(v - old);
+            }
+        }
+    }
+    let status = if crc_ok { "OK" } else { "BAD" };
+    DECODES.with_label_values(&[status]).inc();
+    format!("{now},{seq},{watt:.3},{kwh},{battery},{status}")
 }
 
 impl Block for Decode {
@@ -351,7 +387,7 @@ pub fn create_graph(graph: &mut (impl GraphRunner + ?Sized), opt: &Opt) -> anyho
             .spawn(move || {
                 loop {
                     if let Err(err) = push_metrics(&prom, &wh, serial) {
-                        eprintln!("failed to push prometheus metrics: {err}");
+                        eprintln!("Failed to push prometheus metrics: {err}");
                     }
                     std::thread::sleep(std::time::Duration::from_mins(1));
                 }
