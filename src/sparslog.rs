@@ -1,3 +1,4 @@
+#![allow(clippy::missing_panics_doc)]
 use std::collections::VecDeque;
 use std::io::Write;
 use std::net::SocketAddr;
@@ -14,6 +15,17 @@ use rustradio::graph::GraphRunner;
 use rustradio::stream::ReadStream;
 use rustradio::window::WindowType;
 use rustradio::{Complex, Result, blockchain};
+
+use std::sync::LazyLock;
+
+static REGISTRY: LazyLock<prometheus::Registry> = LazyLock::new(prometheus::Registry::new);
+
+static WATTS: LazyLock<prometheus::Gauge> = LazyLock::new(|| {
+    let metric =
+        prometheus::Gauge::new("electricity_watts", "The instantenous watts used.").unwrap();
+    REGISTRY.register(Box::new(metric.clone())).unwrap();
+    metric
+});
 
 #[derive(clap::Parser, Debug)]
 #[command(version=concat!(
@@ -69,6 +81,14 @@ pub struct Opt {
     /// Run multithreaded.
     #[arg(long)]
     pub multithread: bool,
+
+    /// Prometheus gateway server to push metrics to.
+    #[arg(long, requires = "where_")]
+    prometheus: Option<String>,
+
+    /// Name for location we're measuring.
+    #[arg(long = "where")]
+    where_: Option<String>,
 }
 
 #[derive(rustradio::rustradio_macros::Block)]
@@ -215,6 +235,7 @@ fn parsepacket(packet: &[u8], sensor_id: u32) -> String {
         .expect("Time went backwards")
         .as_secs();
 
+    WATTS.set(watt.into());
     format!(
         "{},{seq},{watt:.3},{kwh},{battery},{}",
         now,
@@ -285,12 +306,57 @@ impl Block for Decode {
     }
 }
 
+static HOSTNAME: LazyLock<String> = LazyLock::new(|| {
+    std::env::var("HOSTNAME")
+        .ok()
+        .filter(|s| !s.is_empty())
+        .unwrap_or_else(|| {
+            std::fs::read_to_string("/etc/hostname")
+                .map(|s| s.trim_end().to_owned())
+                .unwrap_or_else(|_| "unknown".to_owned())
+        })
+});
+
+fn push_metrics(gw: &str, wh: &str, serial: u32) -> anyhow::Result<()> {
+    debug!("Pushing metrics");
+    let grouping = std::collections::HashMap::from([
+        ("instance".to_string(), (*HOSTNAME).clone()),
+        ("where".to_string(), wh.to_string()),
+        ("serial".to_string(), serial.to_string()),
+    ]);
+
+    prometheus::push_metrics(
+        "sparslog", // job name
+        grouping,   // grouping labels
+        gw,
+        REGISTRY.gather(),
+        None, // optional basic auth
+    )?;
+    Ok(())
+}
+
 /// Create the graph to decode sparsnäs.
 ///
 /// # Errors
 ///
 /// If given incompatible cmdline options.
 pub fn create_graph(graph: &mut (impl GraphRunner + ?Sized), opt: &Opt) -> anyhow::Result<()> {
+    if let Some(prom) = &opt.prometheus {
+        let prom = prom.clone();
+        let wh = opt.where_.clone().expect("Can't happen: clap promised!");
+        let serial = opt.sensor_id;
+        std::thread::Builder::new()
+            .name("prometheus-pusher".to_string())
+            .spawn(move || {
+                loop {
+                    if let Err(err) = push_metrics(&prom, &wh, serial) {
+                        eprintln!("failed to push prometheus metrics: {err}");
+                    }
+                    std::thread::sleep(std::time::Duration::from_mins(1));
+                }
+            })
+            .expect("spawn prometheus pusher thread");
+    }
     // Source.
     let src = {
         if let Some(connect) = &opt.connect {
