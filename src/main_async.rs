@@ -6,7 +6,11 @@ mod sparslog;
 
 #[tokio::main]
 async fn main() -> Result<()> {
-    println!("Sparslog (async)");
+    println!(
+        "Sparslog (async) {} ({})",
+        sparslog::VERSION,
+        env!("GIT_VERSION")
+    );
 
     #[cfg(feature = "tokio-unstable")]
     console_subscriber::init();

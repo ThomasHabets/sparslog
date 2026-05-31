@@ -18,6 +18,8 @@ use rustradio::{Complex, Result, blockchain};
 
 use std::sync::LazyLock;
 
+pub const VERSION: &str = env!("CARGO_PKG_VERSION");
+
 static REGISTRY: LazyLock<prometheus::Registry> = LazyLock::new(prometheus::Registry::new);
 
 static WATTS: LazyLock<prometheus::Gauge> = LazyLock::new(|| {
