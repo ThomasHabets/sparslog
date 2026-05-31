@@ -134,7 +134,7 @@ fn f32_to_usize(value: f32) -> anyhow::Result<usize> {
 }
 
 fn bits2byte(data: &[u8]) -> u8 {
-    assert!(data.len() == 8);
+    assert_eq!(data.len(), 8);
     (data[0] << 7)
         | (data[1] << 6)
         | (data[2] << 5)
@@ -186,7 +186,7 @@ fn fix_packet(packet: &[u8]) -> Vec<u8> {
 }
 
 fn parsepacket(packet: &[u8], sensor_id: u32) -> String {
-    assert!(packet.len() == 20);
+    assert_eq!(packet.len(), 20);
     //let sensor = packet[0];
     //let app = packet[1];
     let packet = fix_packet(packet);

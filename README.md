@@ -36,6 +36,9 @@ It'll print stuff, and log to `sparslog.csv`.
 The format is
 `timestamp,sequence_number,watts,kwh,battery_status,CRC_status`
 
+You can also provide `--prometheus` and `--where`, to send the measurements to a
+prometheus metric gateway.
+
 ### Decoder with tokio-console
 
 This requires both the `tokio_unstable` config in `RUSTFLAGS` and the
