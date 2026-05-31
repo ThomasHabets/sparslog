@@ -312,8 +312,7 @@ static HOSTNAME: LazyLock<String> = LazyLock::new(|| {
         .filter(|s| !s.is_empty())
         .unwrap_or_else(|| {
             std::fs::read_to_string("/etc/hostname")
-                .map(|s| s.trim_end().to_owned())
-                .unwrap_or_else(|_| "unknown".to_owned())
+                .map_or_else(|_| "unknown".to_owned(), |s| s.trim_end().to_owned())
         })
 });
 
