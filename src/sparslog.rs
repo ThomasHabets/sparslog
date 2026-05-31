@@ -10,6 +10,16 @@ use rustradio::stream::ReadStream;
 use rustradio::window::WindowType;
 use rustradio::{Complex, Result, blockchain};
 
+use std::sync::LazyLock;
+
+static REGISTRY: LazyLock<prometheus::Registry> = LazyLock::new(prometheus::Registry::new);
+
+static WATTS: LazyLock<prometheus::Gauge> = LazyLock::new(|| {
+    let metric = prometheus::Gauge::new("electricity_watts", "The instantenous watts used.").unwrap();
+    REGISTRY.register(Box::new(metric.clone())).unwrap();
+    metric
+});
+
 #[derive(clap::Parser, Debug)]
 #[command(version, about)]
 pub struct Opt {
@@ -46,6 +56,9 @@ pub struct Opt {
     /// Run multithreaded.
     #[arg(long)]
     pub multithread: bool,
+
+    /// Prometheus server.
+    prometheus: Option<String>,
 }
 
 #[derive(rustradio::rustradio_macros::Block)]
@@ -167,6 +180,7 @@ fn parsepacket(packet: &[u8], sensor_id: u32) -> String {
         .expect("Time went backwards")
         .as_secs();
 
+    WATTS.set(watt.into());
     format!(
         "{},{seq},{watt},{kwh},{battery},{}",
         now,
@@ -237,7 +251,46 @@ impl Block for Decode {
     }
 }
 
+static HOSTNAME: LazyLock<String> = LazyLock::new(|| {
+    std::env::var("HOSTNAME")
+        .ok()
+        .filter(|s| !s.is_empty())
+        .unwrap_or_else(|| {
+            std::fs::read_to_string("/etc/hostname")
+                .map(|s| s.trim_end().to_owned())
+                .unwrap_or_else(|_| "unknown".to_owned())
+        })
+});
+
+fn push_metrics(gw: &str) -> anyhow::Result<()> {
+    debug!("Pushing metrics");
+    let grouping = std::collections::HashMap::from([("instance".to_string(), (*HOSTNAME).clone())]);
+
+    prometheus::push_metrics(
+        "sni-router",            // job name
+        grouping,                // grouping labels
+        gw,
+        REGISTRY.gather(),
+        None, // optional basic auth
+    )?;
+    Ok(())
+}
+
 pub fn create_graph(graph: &mut (impl GraphRunner + ?Sized), opt: &Opt) -> anyhow::Result<()> {
+    if let Some(prom) = &opt.prometheus {
+        let prom = prom.to_string();
+        std::thread::Builder::new()
+             .name("prometheus-pusher".to_string())
+              .spawn(move || {
+            loop {
+                if let Err(err) = push_metrics(&prom) {
+                    eprintln!("failed to push prometheus metrics: {err}");
+                }
+                std::thread::sleep(std::time::Duration::from_mins(1));
+            }
+        })
+        .expect("spawn prometheus pusher thread");
+    }
     // Source.
     let src = {
         if let Some(connect) = &opt.connect {
