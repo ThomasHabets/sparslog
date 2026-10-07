@@ -25,7 +25,7 @@ fn main() -> Result<()> {
     } else {
         Box::new(rustradio::graph::Graph::new())
     };
-    sparslog::create_graph(&mut *graph, &opt)?;
+    let iq_listener = sparslog::create_graph(&mut *graph, &opt)?;
 
     // Set up to run.
     let cancel = graph.cancel_token();
@@ -37,7 +37,10 @@ fn main() -> Result<()> {
 
     // Run.
     eprintln!("Running…");
-    graph.run()?;
+    let result = graph.run();
+    let iq_result = iq_listener.map(sparslog::IqListener::shutdown).transpose();
+    result?;
+    iq_result?;
     eprintln!("{}", graph.generate_stats().unwrap());
     Ok(())
 }

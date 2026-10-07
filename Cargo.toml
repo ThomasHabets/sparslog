@@ -16,13 +16,16 @@ anyhow = "1"
 ctrlc = "3"
 log = "0.4"
 num = "0.4"
-rustradio = {version="0.16", features=["rtlsdr", "fast-math", "async"]}
-#rustradio = {path="../rustradio", features=["rtlsdr", "fast-math", "async"]}
+# `unstable` to enable IQ streaming to a UI.
+rustradio = {version="0.18.5", features=["rtlsdr", "fast-math", "async", "unstable"]}
 stderrlog = "0.6"
 clap = {version = "4", features = ["derive"]}
 console-subscriber = "0.4.1"
 tokio = "1.45.0"
 prometheus = { version = "0.14.0", features = ["process", "push"] }
+
+[dev-dependencies]
+tempfile = "3"
 
 [features]
 default = []
@@ -39,3 +42,6 @@ path = "src/main_async.rs"
 
 [lib]
 path = "src/sparslog.rs"
+
+[patch.crates-io]
+#rustradio = { path = "../rustradio" }

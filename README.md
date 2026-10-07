@@ -39,6 +39,23 @@ The format is
 You can also provide `--prometheus` and `--where`, to send the measurements to a
 prometheus metric gateway.
 
+### Streaming filtered I/Q
+
+Both `sparslog` and `sparslog-async` accept `--iq-listen IP:PORT`:
+
+```
+$ ./target/release/sparslog -s 123456 --rtlsdr --iq-listen 127.0.0.1:9000
+```
+
+The resource `filtered` contains complex float32 samples immediately after
+the FFT filter, before resampling, at `--sample_rate` Hz. The listener serves
+gRPC and WebSocket (`ws://127.0.0.1:9000/iq/v1/stream`) on the same port.
+Clients must allow gaps: absent or slow clients do not stop decoding, and
+overflow is reported as gaps. Streaming is disabled unless the option is given.
+
+Building requires the sibling `../rustradio` checkout (version 0.18.4), selected
+through the Cargo crates.io patch override with its `unstable` feature enabled.
+
 ### Decoder with tokio-console
 
 This requires both the `tokio_unstable` config in `RUSTFLAGS` and the

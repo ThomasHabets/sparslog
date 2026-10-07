@@ -27,7 +27,7 @@ async fn main() -> Result<()> {
 
     let mut graph = rustradio::agraph::AsyncGraph::new();
 
-    sparslog::create_graph(&mut graph, &opt)?;
+    let iq_listener = sparslog::create_graph(&mut graph, &opt)?;
 
     // Set up to run.
     let cancel = graph.cancel_token();
@@ -39,7 +39,10 @@ async fn main() -> Result<()> {
 
     // Run.
     eprintln!("Running…");
-    graph.run_async().await?;
+    let result = graph.run_async().await;
+    let iq_result = iq_listener.map(sparslog::IqListener::shutdown).transpose();
+    result?;
+    iq_result?;
     eprintln!("{}", graph.generate_stats().unwrap_or("No stats".into()));
     Ok(())
 }

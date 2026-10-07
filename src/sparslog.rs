@@ -8,10 +8,11 @@ use log::debug;
 
 use rustradio::block::{Block, BlockRet};
 use rustradio::blocks::{
-    AddConst, BinarySlicer, FftFilter, FileSource, QuadratureDemod, RationalResampler,
-    RtlSdrDecode, RtlSdrSource, TcpSource, ZeroCrossing,
+    AddConst, BinarySlicer, FftFilter, FileSource, IqStreamSink, QuadratureDemod,
+    RationalResampler, RtlSdrDecode, RtlSdrSource, TcpSource, Tee, ZeroCrossing,
 };
 use rustradio::graph::GraphRunner;
+use rustradio::iq_stream::IqServer;
 use rustradio::stream::ReadStream;
 use rustradio::window::WindowType;
 use rustradio::{Complex, Result, blockchain};
@@ -109,6 +110,10 @@ pub struct Opt {
     /// Run multithreaded.
     #[arg(long)]
     pub multithread: bool,
+
+    /// Serve filtered I/Q over gRPC and WebSocket on this IP:PORT.
+    #[arg(long)]
+    iq_listen: Option<SocketAddr>,
 
     /// Prometheus gateway server to push metrics to.
     #[arg(long, requires = "where_")]
@@ -372,12 +377,100 @@ fn push_metrics(gw: &str, wh: &str, serial: u32) -> anyhow::Result<()> {
     Ok(())
 }
 
-/// Create the graph to decode sparsnäs.
+/// Owns the optional IQ listener until graph execution finishes.
+#[must_use = "retain the listener until graph execution ends"]
+pub struct IqListener {
+    address: SocketAddr,
+    stop: Option<tokio::sync::oneshot::Sender<()>>,
+    thread: Option<std::thread::JoinHandle<anyhow::Result<()>>>,
+}
+
+impl IqListener {
+    fn start(
+        server: IqServer,
+        address: SocketAddr,
+        cancel: rustradio::graph::CancellationToken,
+    ) -> anyhow::Result<Self> {
+        let listener = std::net::TcpListener::bind(address)?;
+        listener.set_nonblocking(true)?;
+        let address = listener.local_addr()?;
+        let runtime = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()?;
+        let (stop, stopped) = tokio::sync::oneshot::channel();
+        let thread = std::thread::Builder::new()
+            .name("iq-listener".into())
+            .spawn(move || {
+                let result = runtime.block_on(async move {
+                    let listener = tokio::net::TcpListener::from_std(listener)?;
+                    server
+                        .serve(listener, async {
+                            let _ = stopped.await;
+                        })
+                        .await?;
+                    Ok(())
+                });
+                cancel.cancel();
+                result
+            })?;
+        let listener = Self {
+            address,
+            stop: Some(stop),
+            thread: Some(thread),
+        };
+        eprintln!(
+            "IQ stream 'filtered' listening on {}",
+            listener.local_addr()
+        );
+        Ok(listener)
+    }
+
+    /// Bound address, including the assigned port when port zero was requested.
+    #[must_use]
+    pub fn local_addr(&self) -> SocketAddr {
+        self.address
+    }
+
+    /// Stop the listener and report any server failure.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the server failed or its thread panicked.
+    pub fn shutdown(mut self) -> anyhow::Result<()> {
+        self.stop_and_join()
+    }
+
+    fn stop_and_join(&mut self) -> anyhow::Result<()> {
+        if let Some(stop) = self.stop.take() {
+            let _ = stop.send(());
+        }
+        if let Some(thread) = self.thread.take() {
+            thread
+                .join()
+                .map_err(|_| anyhow!("IQ listener thread panicked"))??;
+        }
+        Ok(())
+    }
+}
+
+impl Drop for IqListener {
+    fn drop(&mut self) {
+        if let Err(err) = self.stop_and_join() {
+            eprintln!("IQ listener failed: {err}");
+        }
+    }
+}
+
+/// Create the graph to decode sparsnäs, retaining the returned IQ listener
+/// until graph execution ends.
 ///
 /// # Errors
 ///
-/// If given incompatible cmdline options.
-pub fn create_graph(graph: &mut (impl GraphRunner + ?Sized), opt: &Opt) -> anyhow::Result<()> {
+/// If given incompatible cmdline options, or if the IQ listener cannot start.
+pub fn create_graph(
+    graph: &mut (impl GraphRunner + ?Sized),
+    opt: &Opt,
+) -> anyhow::Result<Option<IqListener>> {
     if let Some(prom) = &opt.prometheus {
         let prom = prom.clone();
         let wh = opt.where_.clone().expect("Can't happen: clap promised!");
@@ -446,6 +539,23 @@ pub fn create_graph(graph: &mut (impl GraphRunner + ?Sized), opt: &Opt) -> anyho
             prev,
             rustradio::fir::low_pass_complex(samp_rate, 50000.0, 10000.0, &WindowType::Hamming)
         ),
+    ];
+    let server = opt.iq_listen.map(|_| IqServer::new());
+    let prev = if let Some(server) = &server {
+        let (tee, decoder, iq) = Tee::new(prev);
+        graph.add(Box::new(tee));
+        graph.add(Box::new(
+            IqStreamSink::builder(iq, server, "filtered", f64::from(opt.sample_rate))
+                .blocking(false)
+                .build()?,
+        ));
+        decoder
+    } else {
+        prev
+    };
+    let prev = blockchain![
+        graph,
+        prev,
         RationalResampler::new(prev, f32_to_usize(samp_rate_2)?, f32_to_usize(samp_rate)?)?,
         QuadratureDemod::new(prev, 1.0),
         AddConst::new(prev, opt.offset),
@@ -456,12 +566,184 @@ pub fn create_graph(graph: &mut (impl GraphRunner + ?Sized), opt: &Opt) -> anyho
     // Decode.
     let decode = Box::new(Decode::new(prev, opt.sensor_id, opt.output.clone()));
     graph.add(decode);
-    Ok(())
+    server
+        .zip(opt.iq_listen)
+        .map(|(server, address)| IqListener::start(server, address, graph.cancel_token()))
+        .transpose()
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use clap::Parser;
+    use std::time::Duration;
+
+    fn iq_fixture() -> anyhow::Result<(tempfile::NamedTempFile, Opt)> {
+        let mut file = tempfile::NamedTempFile::new()?;
+        file.write_all(&vec![0; 32_768 * 8])?;
+        let opt = Opt::try_parse_from([
+            "sparslog",
+            "--serial",
+            "123456",
+            "--read",
+            file.path().to_str().unwrap(),
+            "--iq-listen",
+            "127.0.0.1:0",
+        ])?;
+        Ok((file, opt))
+    }
+
+    async fn run_sync_graph(mut graph: impl GraphRunner + Send + 'static) -> anyhow::Result<()> {
+        let cancel = graph.cancel_token();
+        let task = tokio::task::spawn_blocking(move || graph.run());
+        let result = tokio::time::timeout(Duration::from_secs(5), task).await;
+        cancel.cancel();
+        result???;
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn iq_without_clients_all_executors() -> anyhow::Result<()> {
+        let (_file, mut opt) = iq_fixture()?;
+        let mut graph = rustradio::graph::Graph::new();
+        let listener = create_graph(&mut graph, &opt)?.unwrap();
+        let address = listener.local_addr();
+        run_sync_graph(graph).await?;
+        listener.shutdown()?;
+        // Shutdown joins the server thread and releases the listening socket.
+        let _rebound = std::net::TcpListener::bind(address)?;
+
+        let mut graph = rustradio::mtgraph::MTGraph::new();
+        let listener = create_graph(&mut graph, &opt)?.unwrap();
+        run_sync_graph(graph).await?;
+        listener.shutdown()?;
+
+        let mut graph = rustradio::agraph::AsyncGraph::new();
+        let listener = create_graph(&mut graph, &opt)?.unwrap();
+        let cancel = graph.cancel_token();
+        let result = tokio::time::timeout(Duration::from_secs(5), graph.run_async()).await;
+        cancel.cancel();
+        result??;
+        listener.shutdown()?;
+
+        opt.iq_listen = None;
+        let mut graph = rustradio::graph::Graph::new();
+        assert!(create_graph(&mut graph, &opt)?.is_none());
+        run_sync_graph(graph).await
+    }
+
+    #[test]
+    fn iq_bind_failure() -> anyhow::Result<()> {
+        let (_file, mut opt) = iq_fixture()?;
+        let occupied = std::net::TcpListener::bind("127.0.0.1:0")?;
+        opt.iq_listen = Some(occupied.local_addr()?);
+        let mut graph = rustradio::graph::Graph::new();
+        assert!(create_graph(&mut graph, &opt).is_err());
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn iq_stream_metadata_and_samples() -> anyhow::Result<()> {
+        check_iq_stream(false).await
+    }
+
+    #[tokio::test]
+    async fn iq_slow_client_reports_gaps() -> anyhow::Result<()> {
+        check_iq_stream(true).await
+    }
+
+    async fn check_iq_stream(slow: bool) -> anyhow::Result<()> {
+        use rustradio::blocks::{IqStreamSource, VectorSink};
+        use rustradio::iq_stream::{SourceStatus, StreamOptions, proto};
+
+        let (_file, opt) = iq_fixture()?;
+        let mut graph = rustradio::graph::Graph::new();
+        let listener = create_graph(&mut graph, &opt)?.unwrap();
+        let mut options = StreamOptions {
+            loss_policy: proto::LossPolicy::AllowGaps,
+            ..Default::default()
+        };
+        if slow {
+            options.limits.max_frame_bytes = 128;
+            options.limits.max_in_flight_frames = 1;
+        }
+        let (source, input, status) = IqStreamSource::<Complex>::connect(
+            format!("http://{}", listener.local_addr()),
+            "filtered",
+            options,
+        )
+        .await?;
+        assert_eq!(
+            status.description().sample_rate_hz,
+            f64::from(opt.sample_rate)
+        );
+        assert_eq!(status.description().source_id, "filtered");
+        let sink = VectorSink::new(input, 32_768);
+        let samples = sink.hook();
+        let mut receiver = rustradio::graph::Graph::new();
+        receiver.add(Box::new(source));
+        receiver.add(Box::new(sink));
+        let receiving = async {
+            if slow {
+                tokio::time::sleep(Duration::from_millis(100)).await;
+            }
+            run_sync_graph(receiver).await
+        };
+        let (sending, receiving) = tokio::join!(run_sync_graph(graph), receiving);
+        sending?;
+        receiving?;
+        assert_eq!(status.status(), SourceStatus::Complete);
+        if slow {
+            assert!(status.lost_samples() > 0);
+        }
+        assert_ne!(samples.data().samples(), []);
+        assert!(
+            samples
+                .data()
+                .samples()
+                .iter()
+                .all(|s| *s == Complex::new(0.0, 0.0))
+        );
+        listener.shutdown()
+    }
+
+    #[tokio::test]
+    async fn iq_disconnect_and_cancellation() -> anyhow::Result<()> {
+        use rustradio::blocks::IqStreamSource;
+        use rustradio::iq_stream::{StreamOptions, proto};
+
+        let (_file, mut opt) = iq_fixture()?;
+        let mut graph = rustradio::graph::Graph::new();
+        let listener = create_graph(&mut graph, &opt)?.unwrap();
+        let (source, input, _) = IqStreamSource::<Complex>::connect(
+            format!("http://{}", listener.local_addr()),
+            "filtered",
+            StreamOptions {
+                loss_policy: proto::LossPolicy::AllowGaps,
+                ..Default::default()
+            },
+        )
+        .await?;
+        let sending = tokio::spawn(run_sync_graph(graph));
+        tokio::time::sleep(Duration::from_millis(100)).await;
+        drop(source);
+        drop(input);
+        sending.await??;
+        listener.shutdown()?;
+
+        opt.read = Some("/dev/zero".into());
+        let mut graph = rustradio::graph::Graph::new();
+        let listener = create_graph(&mut graph, &opt)?.unwrap();
+        let address = listener.local_addr();
+        let cancel = graph.cancel_token();
+        let sending = tokio::spawn(run_sync_graph(graph));
+        tokio::time::sleep(Duration::from_millis(100)).await;
+        cancel.cancel();
+        sending.await??;
+        drop(listener);
+        let _rebound = std::net::TcpListener::bind(address)?;
+        Ok(())
+    }
 
     #[test]
     fn convert_i32() -> anyhow::Result<()> {
