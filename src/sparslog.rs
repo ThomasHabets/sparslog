@@ -539,13 +539,14 @@ pub fn create_graph(
             prev,
             rustradio::fir::low_pass_complex(samp_rate, 50000.0, 10000.0, &WindowType::Hamming)
         ),
+        RationalResampler::new(prev, f32_to_usize(samp_rate_2)?, f32_to_usize(samp_rate)?)?,
     ];
     let server = opt.iq_listen.map(|_| IqServer::new());
     let prev = if let Some(server) = &server {
         let (tee, decoder, iq) = Tee::new(prev);
         graph.add(Box::new(tee));
         graph.add(Box::new(
-            IqStreamSink::builder(iq, server, "filtered", f64::from(opt.sample_rate))
+            IqStreamSink::builder(iq, server, "filtered", f64::from(samp_rate_2))
                 .blocking(false)
                 .build()?,
         ));
@@ -556,7 +557,6 @@ pub fn create_graph(
     let prev = blockchain![
         graph,
         prev,
-        RationalResampler::new(prev, f32_to_usize(samp_rate_2)?, f32_to_usize(samp_rate)?)?,
         QuadratureDemod::new(prev, 1.0),
         AddConst::new(prev, opt.offset),
         ZeroCrossing::new(prev, samp_rate_2 / baud, 0.1),
@@ -673,10 +673,7 @@ mod tests {
             options,
         )
         .await?;
-        assert_eq!(
-            status.description().sample_rate_hz,
-            f64::from(opt.sample_rate)
-        );
+        assert_eq!(status.description().sample_rate_hz, 200_000.0);
         assert_eq!(status.description().source_id, "filtered");
         let sink = VectorSink::new(input, 32_768);
         let samples = sink.hook();
