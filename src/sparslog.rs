@@ -111,7 +111,7 @@ pub struct Opt {
     #[arg(long)]
     pub multithread: bool,
 
-    /// Serve filtered I/Q over gRPC and WebSocket on this IP:PORT.
+    /// Serve filtered I/Q and demodulated samples on this IP:PORT.
     #[arg(long)]
     iq_listen: Option<SocketAddr>,
 
@@ -419,7 +419,7 @@ impl IqListener {
             thread: Some(thread),
         };
         eprintln!(
-            "IQ stream 'filtered' listening on {}",
+            "IQ streams 'filtered' and 'demodulated' listening on {}",
             listener.local_addr()
         );
         Ok(listener)
@@ -459,6 +459,26 @@ impl Drop for IqListener {
             eprintln!("IQ listener failed: {err}");
         }
     }
+}
+
+fn iq_tap<T: rustradio::iq_stream::IqSample>(
+    graph: &mut (impl GraphRunner + ?Sized),
+    input: ReadStream<T>,
+    server: Option<&IqServer>,
+    name: &str,
+    sample_rate: f64,
+) -> Result<ReadStream<T>> {
+    let Some(server) = server else {
+        return Ok(input);
+    };
+    let (tee, decoder, tapped) = Tee::new(input);
+    graph.add(Box::new(tee));
+    graph.add(Box::new(
+        IqStreamSink::builder(tapped, server, name, sample_rate)
+            .blocking(false)
+            .build()?,
+    ));
+    Ok(decoder)
 }
 
 /// Create the graph to decode sparsnäs, retaining the returned IQ listener
@@ -542,23 +562,29 @@ pub fn create_graph(
         RationalResampler::new(prev, f32_to_usize(samp_rate_2)?, f32_to_usize(samp_rate)?)?,
     ];
     let server = opt.iq_listen.map(|_| IqServer::new());
-    let prev = if let Some(server) = &server {
-        let (tee, decoder, iq) = Tee::new(prev);
-        graph.add(Box::new(tee));
-        graph.add(Box::new(
-            IqStreamSink::builder(iq, server, "filtered", f64::from(samp_rate_2))
-                .blocking(false)
-                .build()?,
-        ));
-        decoder
-    } else {
-        prev
-    };
+    let prev = iq_tap(
+        graph,
+        prev,
+        server.as_ref(),
+        "filtered",
+        f64::from(samp_rate_2),
+    )?;
     let prev = blockchain![
         graph,
         prev,
         QuadratureDemod::new(prev, 1.0),
         AddConst::new(prev, opt.offset),
+    ];
+    let prev = iq_tap(
+        graph,
+        prev,
+        server.as_ref(),
+        "demodulated",
+        f64::from(samp_rate_2),
+    )?;
+    let prev = blockchain![
+        graph,
+        prev,
         ZeroCrossing::new(prev, samp_rate_2 / baud, 0.1),
         BinarySlicer::new(prev),
     ];
@@ -664,13 +690,14 @@ mod tests {
             ..Default::default()
         };
         if slow {
-            options.limits.max_frame_bytes = 128;
+            // Leave room for a sample and its stream tags while forcing gaps.
+            options.limits.max_frame_bytes = 512;
             options.limits.max_in_flight_frames = 1;
         }
         let (source, input, status) = IqStreamSource::<Complex>::connect(
             format!("http://{}", listener.local_addr()),
             "filtered",
-            options,
+            options.clone(),
         )
         .await?;
         assert_eq!(status.description().sample_rate_hz, 200_000.0);
@@ -678,6 +705,18 @@ mod tests {
         let sink = VectorSink::new(input, 32_768);
         let samples = sink.hook();
         let mut receiver = rustradio::graph::Graph::new();
+        receiver.add(Box::new(source));
+        receiver.add(Box::new(sink));
+        let (source, input, demodulated_status) = IqStreamSource::<f32>::connect(
+            format!("http://{}", listener.local_addr()),
+            "demodulated",
+            options,
+        )
+        .await?;
+        assert_eq!(demodulated_status.description().sample_rate_hz, 200_000.0);
+        assert_eq!(demodulated_status.description().source_id, "demodulated");
+        let sink = VectorSink::new(input, 32_768);
+        let demodulated_samples = sink.hook();
         receiver.add(Box::new(source));
         receiver.add(Box::new(sink));
         let receiving = async {
@@ -690,9 +729,19 @@ mod tests {
         sending?;
         receiving?;
         assert_eq!(status.status(), SourceStatus::Complete);
+        assert_eq!(demodulated_status.status(), SourceStatus::Complete);
         if slow {
             assert!(status.lost_samples() > 0);
+            assert!(demodulated_status.lost_samples() > 0);
         }
+        assert_ne!(demodulated_samples.data().samples(), &[] as &[f32]);
+        assert!(
+            demodulated_samples
+                .data()
+                .samples()
+                .iter()
+                .all(|s| s.to_bits() == opt.offset.to_bits())
+        );
         assert_ne!(samples.data().samples(), []);
         assert!(
             samples

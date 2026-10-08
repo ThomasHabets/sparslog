@@ -48,12 +48,15 @@ $ ./target/release/sparslog -s 123456 --rtlsdr --iq-listen 127.0.0.1:9000
 ```
 
 The resource `filtered` contains complex float32 samples immediately after
-the rational resampler, before demodulation, at 200,000 Hz. The listener serves
+the rational resampler, before demodulation, at 200,000 Hz. The resource
+`demodulated` contains real float32 samples after demodulation and the
+`--offset` adjustment (`AddConst`), before `ZeroCrossing`, also at 200,000 Hz.
+Both taps are nonblocking and share the same listener. The listener serves
 gRPC and WebSocket (`ws://127.0.0.1:9000/iq/v1/stream`) on the same port.
 Clients must allow gaps: absent or slow clients do not stop decoding, and
 overflow is reported as gaps. Streaming is disabled unless the option is given.
 
-Building requires the sibling `../rustradio` checkout (version 0.18.4), selected
+Building requires the sibling `../rustradio` checkout (version 0.18.6), selected
 through the Cargo crates.io patch override with its `unstable` feature enabled.
 
 ### Decoder with tokio-console
