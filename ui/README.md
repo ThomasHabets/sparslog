@@ -21,6 +21,10 @@ Open <http://127.0.0.1:8080>. In another terminal, start the receiver:
 cargo run --bin sparslog -- --serial 123456 --rtlsdr --iq-listen 127.0.0.1:9000
 ```
 
+The header’s **Theme** selector offers System, Light, and Dark modes and remembers
+your choice. Plot canvases currently follow the system theme because rustradio-ui
+does not expose a theme override.
+
 Enter the listener’s host and port and click **Connect**. **Disconnect** closes
 both streams; reconnecting clears both plots. HTTPS pages default to TLS and
 require a `wss://` backend, typically provided by a reverse proxy.

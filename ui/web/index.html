@@ -5,6 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="theme-color" content="#f4f6f5">
   <title>Sparslog · Signal monitor</title>
+  <script src="theme.js"></script>
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
@@ -16,7 +17,12 @@
         </span>
         <div><p class="eyebrow">Sparslog</p><h1>Signal monitor</h1></div>
       </div>
-      <p class="masthead-note">Frequency &amp; time<br><span>Filtered I/Q · demodulated</span></p>
+      <div class="masthead-actions">
+        <p class="masthead-note">Frequency &amp; time<br><span>Filtered I/Q · demodulated</span></p>
+        <label class="theme-control" for="theme">Theme
+          <select id="theme"><option value="system">System</option><option value="light">Light</option><option value="dark">Dark</option></select>
+        </label>
+      </div>
     </header>
 
     <section class="connection-card" aria-labelledby="connection-title">

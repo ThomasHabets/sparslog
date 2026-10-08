@@ -1017,9 +1017,9 @@ dependencies = [
 
 [[package]]
 name = "rustradio-ui"
-version = "0.1.25"
+version = "0.1.26"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "3193d6ac1361a9927154a731a56269ae2fc6d96653706570e7039316c9809aaf"
+checksum = "de0d96b2ceda52471b257cfc99f6b1805f0283ae924103b72d3e009043120173"
 dependencies = [
  "async-channel",
  "js-sys",

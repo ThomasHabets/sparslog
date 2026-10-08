@@ -1,5 +1,5 @@
 :root {
-  color-scheme: light dark;
+  color-scheme: light;
   font: 14px/1.5 ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
   --page: #f4f6f5;
   --surface: #ffffff;
@@ -79,10 +79,9 @@ summary span { margin-left: auto; font-size: 10px; }
 details[open] summary::before { content: "−"; }
 pre { margin: 0; padding: 16px 20px; border-top: 1px solid var(--border); white-space: pre-wrap; overflow-wrap: anywhere; max-height: 250px; overflow: auto; color: var(--muted); font: 11px/1.7 ui-monospace, SFMono-Regular, Consolas, monospace; }
 .page-footer { display: flex; justify-content: space-between; gap: 16px; margin-top: 24px; color: var(--muted); font-size: 10px; }
-@media (prefers-color-scheme: dark) {
-  :root { --page: #111a17; --surface: #19241f; --surface-strong: #19241f; --surface-muted: #14201a; --ink: #e0eae4; --muted: #9aafa3; --border: #2c3e33; --border-strong: #3a5043; --accent: #5ecca0; --accent-hover: #49b78c; --accent-soft: #243b2e; --shadow: 0 4px 20px #00000012; }
-  #connect { color: #10281c; }
+:root[data-theme="dark"] { color-scheme: dark; --page: #111a17; --surface: #19241f; --surface-strong: #19241f; --surface-muted: #14201a; --ink: #e0eae4; --muted: #9aafa3; --border: #2c3e33; --border-strong: #3a5043; --accent: #5ecca0; --accent-hover: #49b78c; --accent-soft: #243b2e; --shadow: 0 4px 20px #00000012;
 }
+:root[data-theme="dark"] #connect { color: #10281c; }
 @media (max-width: 960px) {
   main { padding: 28px 24px 20px; }
   .connection { grid-template-columns: minmax(160px, 1fr) 100px; gap: 16px; }
@@ -105,3 +104,14 @@ pre { margin: 0; padding: 16px 20px; border-top: 1px solid var(--border); white-
   .page-footer span:last-child { display: none; }
 }
 @media (prefers-reduced-motion: reduce) { button { transition: none; } }
+
+.masthead-actions { display: flex; align-items: center; gap: 24px; }
+.theme-control { gap: 4px; font-size: 10px; }
+.theme-control select { padding: 6px 10px; font-size: 12px; }
+/* Library waterfall CSS follows the OS; these DOM colors follow our selection. */
+.rr-waterfall-sink-plot { background: var(--surface-muted); color: var(--border); }
+@media (max-width: 540px) {
+  .masthead { gap: 12px; }
+  .brand { gap: 10px; }
+  .theme-control select { max-width: 96px; }
+}
