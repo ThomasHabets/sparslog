@@ -59,6 +59,12 @@ overflow is reported as gaps. Streaming is disabled unless the option is given.
 Building requires the sibling `../rustradio` checkout (version 0.18.6), selected
 through the Cargo crates.io patch override with its `unstable` feature enabled.
 
+### Browser stream viewer
+
+The [WASM stream viewer](ui/README.md) displays `filtered` as a waterfall and
+`demodulated` as a 50 ms time sink. Build and serve it from the `ui/` subdirectory,
+then connect to the receiver's `--iq-listen` address.
+
 ### Decoder with tokio-console
 
 This requires both the `tokio_unstable` config in `RUSTFLAGS` and the

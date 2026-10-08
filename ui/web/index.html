@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Sparslog stream viewer</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <main>
+    <header><p>Sparslog</p><h1>Stream viewer</h1></header>
+    <section class="connection" aria-label="Stream connection">
+      <label>Host <input id="host" value="127.0.0.1" autocomplete="off" disabled></label>
+      <label>Port <input id="port" type="number" min="1" max="65535" value="9000" disabled></label>
+      <label class="tls"><input id="tls" type="checkbox" disabled> Secure connection (TLS)</label>
+      <div class="buttons"><button id="connect" disabled>Connect</button><button id="disconnect" disabled>Disconnect</button></div>
+    </section>
+    <p class="help">Connect to sparslog’s IQ listener to view filtered and demodulated samples.</p>
+    <p id="status" role="status" aria-live="polite">Starting worker…</p>
+    <section id="waterfall" aria-label="Filtered waterfall">Loading waterfall…</section>
+    <section id="time-sink" aria-label="Demodulated waveform">Loading time sink…</section>
+    <details><summary>Log</summary><pre id="log-output">Awaiting logs…</pre></details>
+  </main>
+  <script type="module" src="wasm-mod.js"></script>
+</body>
+</html>
