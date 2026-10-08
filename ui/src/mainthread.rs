@@ -149,6 +149,8 @@ fn mount_time(sample_rate: f64) -> Result<(), JsValue> {
         },
     )
     .map_err(|e| JsValue::from_str(&e.to_string()))?;
+    sink.set_trigger_delay(std::time::Duration::from_millis(1))
+        .map_err(|e| JsValue::from_str(&e.to_string()))?;
     TIME.with(|slot| *slot.borrow_mut() = Some(sink));
     Ok(())
 }
