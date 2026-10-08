@@ -5,6 +5,9 @@ use rustradio::stream::{NCReadStream, Tag};
 use rustradio::{Complex, Float};
 use rustradio_ui::TaggedVec;
 
+// Time sink size in seconds.
+const WAVEFORM_TIME: f64 = 0.01;
+
 #[derive(rustradio_macros::Block)]
 pub(crate) struct DisplaySink {
     #[rustradio(in)]
@@ -81,7 +84,7 @@ pub(crate) fn window_chunk(
 
 #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
 pub(crate) fn waveform_size(rate: f64) -> rustradio::Result<usize> {
-    let points = (rate * 0.05).round();
+    let points = (rate * WAVEFORM_TIME).round();
     if !rate.is_finite() || rate <= 0.0 || points > f64::from(u32::MAX) {
         return Err(rustradio::Error::msg("Invalid time-sink sample rate"));
     }
@@ -94,8 +97,8 @@ mod tests {
 
     #[test]
     fn waveform_window_matches_negotiated_rate() -> rustradio::Result<()> {
-        assert_eq!(waveform_size(200_000.0)?, 10_000);
-        assert_eq!(waveform_size(48_000.0)?, 2_400);
+        assert_eq!(waveform_size(200_000.0)?, 2_000);
+        assert_eq!(waveform_size(48_000.0)?, 480);
         assert_eq!(waveform_size(1.0)?, 1);
         for invalid in [0.0, -1.0, f64::NAN, f64::INFINITY] {
             assert!(waveform_size(invalid).is_err());

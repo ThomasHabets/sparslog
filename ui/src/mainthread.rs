@@ -113,8 +113,12 @@ async fn worker_msg(message: WorkerToMain) -> Result<(), JsValue> {
                 let slot = slot.borrow();
                 let sink = slot.as_ref().expect("mounted time sink");
                 if !sink.paused() {
-                    // Frames are independent windows, never joined across gaps.
-                    sink.clear()?;
+                    // Free running displays one independent window at a time.
+                    // Trigger mode must keep its detector and capture across
+                    // frames, and hold the waveform while waiting for an edge.
+                    if sink.trigger().is_none() {
+                        sink.clear()?;
+                    }
                     sink.update(frames)?;
                 }
                 Ok::<_, rustradio::Error>(())
@@ -137,7 +141,7 @@ fn mount_time(sample_rate: f64) -> Result<(), JsValue> {
         "time-sink",
         TimeSinkOptions {
             title: "Aligned waveforms".into(),
-            subtitle: "50 ms windows · filtered I/Q and demodulated".into(),
+            subtitle: "Filtered I/Q and demodulated".into(),
             y_label: "Amplitude".into(),
             sample_rate,
             max_points,

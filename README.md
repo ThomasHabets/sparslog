@@ -62,9 +62,8 @@ through the Cargo crates.io patch override with its `unstable` feature enabled.
 ### Browser stream viewer
 
 The [WASM stream viewer](ui/README.md) displays `filtered` as a waterfall and
-aligned filtered I/Q plus `demodulated` in a 50 ms time sink. Build and serve it
-from the `ui/` subdirectory,
-then connect to the receiver's `--iq-listen` address.
+aligned filtered I/Q plus `demodulated` in a time sink. Build and serve it from
+the `ui/` subdirectory, then connect to the receiver's `--iq-listen` address.
 
 ### Decoder with tokio-console
 
