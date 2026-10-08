@@ -17,7 +17,7 @@ ctrlc = "3"
 log = "0.4"
 num = "0.4"
 # `unstable` to enable IQ streaming to a UI.
-rustradio = {version="0.18.6", features=["rtlsdr", "fast-math", "async", "unstable"]}
+rustradio = {version="0.18.8", features=["rtlsdr", "fast-math", "async", "unstable"]}
 stderrlog = "0.6"
 clap = {version = "4", features = ["derive"]}
 console-subscriber = "0.4.1"
