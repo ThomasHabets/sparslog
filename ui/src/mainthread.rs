@@ -114,10 +114,8 @@ async fn worker_msg(message: WorkerToMain) -> Result<(), JsValue> {
                 let sink = slot.as_ref().expect("mounted time sink");
                 if !sink.paused() {
                     // Frames are independent windows, never joined across gaps.
-                    for frame in frames {
-                        sink.clear()?;
-                        sink.update(vec![frame])?;
-                    }
+                    sink.clear()?;
+                    sink.update(frames)?;
                 }
                 Ok::<_, rustradio::Error>(())
             })
@@ -138,9 +136,9 @@ fn mount_time(sample_rate: f64) -> Result<(), JsValue> {
     let sink = TimeSink::mount_by_id(
         "time-sink",
         TimeSinkOptions {
-            title: "Demodulated · time sink".into(),
-            subtitle: "Latest 50 ms after offset adjustment".into(),
-            y_label: "Demodulated value".into(),
+            title: "Aligned I/Q and demodulated · time sink".into(),
+            subtitle: "Latest 50 ms · filtered I, filtered Q, demodulated".into(),
+            y_label: "Amplitude".into(),
             sample_rate,
             max_points,
             ..Default::default()

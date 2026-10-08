@@ -1,6 +1,7 @@
 # Sparslog WASM viewer
 
-View `filtered` as a waterfall and `demodulated` as a 50 ms waveform.
+View `filtered` as a waterfall and aligned filtered I/Q plus `demodulated`
+as three traces in a 50 ms time sink.
 Both streams use the receiver’s existing nonblocking IQ listener.
 
 ## Build and run
@@ -29,18 +30,22 @@ server supplies the COOP/COEP headers required for the shared-memory worker.
 Other hosting must supply the same headers and serve the assets from one origin.
 
 This crate is an independent Cargo workspace using published `rustradio-ui`
-0.1.25 and `rustradio` 0.18.6 or compatible releases. It does not inherit the
-receiver’s local dependency patches. The build copies library assets from the
-resolved registry package; no sibling checkout is required.
+0.1.25 and a local crates.io patch for `rustradio` from `../../rustradio`.
+The sibling checkout provides the unreleased `StreamAlign` block and must be
+present to build. The build copies UI assets from the resolved registry package.
 
 ## Displays
 
 The waterfall uses 2048-sample Hamming windows, FFT power in dB, and at most
 approximately 30 rows per second. Its frequency axis is relative to the stream
-center. The time sink shows successive 50 ms windows with pause, autoscale, and
-Y-range controls. Both axes use the negotiated sample rates.
+center. The filtered stream is teed into the waterfall and `StreamAlign` with
+the demodulated stream. The aligned filtered stream is converted to Float I and
+Q. The time sink shows all three aligned traces in successive 50 ms windows with
+pause, autoscale, and Y-range controls. Alignment uses absolute sample tags and
+requires equal sample rates. Both axes use the negotiated sample rates.
 
-Both connections allow gaps. Windows containing gaps are discarded; waveform
+Both connections allow gaps. Alignment drops unmatched samples. Time windows
+containing a gap in any trace are discarded together; waveform
 history is cleared between windows so traces cannot span missing samples.
 Display queues are bounded and may drop windows if rendering is slow. Network
 missing-sample counts are reported separately for each stream when the session

@@ -3,7 +3,7 @@ use std::future::{Future, poll_fn};
 use std::task::Poll;
 
 use async_channel::{Receiver, Sender};
-use rustradio::blocks::{Fft, NCMap, StreamChunks};
+use rustradio::blocks::{ComplexToFloat, Fft, NCMap, StreamAlign, StreamChunks, Tee};
 use rustradio::graph::GraphRunner;
 use rustradio::iq_stream::{StreamOptions, proto};
 use rustradio::{Complex, Float};
@@ -12,7 +12,7 @@ use rustradio_ui::worker::{IqStreamSource, send_message};
 use wasm_bindgen::JsValue;
 use wasm_bindgen_futures::spawn_local;
 
-use crate::display::{DisplaySink, contiguous, waveform_size, window_chunk};
+use crate::display::{DisplaySink, WaveformSink, waveform_size, window_chunk};
 use crate::{AppMessage, Connection, MainToWorker, WorkerToMain};
 
 pub(crate) const SPECTRUM: &str = "spectrum";
@@ -69,6 +69,13 @@ async fn run_graph(settings: Connection, stop: Receiver<()>) -> rustradio::Resul
     };
     let demodulated_rate = demodulated_handle.description().sample_rate_hz;
     let waveform_points = waveform_size(demodulated_rate)?;
+    // These negotiated rates must describe the same clock, without tolerance.
+    #[allow(clippy::float_cmp)]
+    if handle.description().sample_rate_hz != demodulated_rate {
+        return Err(rustradio::Error::msg(
+            "StreamAlign requires filtered and demodulated sample rates to match",
+        ));
+    }
     // The waterfall API takes f32; reject rates outside its finite range below.
     #[allow(clippy::cast_possible_truncation)]
     let sample_rate = handle.description().sample_rate_hz as f32;
@@ -85,7 +92,9 @@ async fn run_graph(settings: Connection, stop: Receiver<()>) -> rustradio::Resul
     let mut graph = rustradio::wasm::wasm_graph::WasmGraph::new();
     graph.add(Box::new(source));
     graph.add(Box::new(demodulated));
-    let (chunks, chunks_out) = StreamChunks::new(samples, usize::from(FFT_SIZE));
+    let (tee, spectrum, filtered) = Tee::new(samples);
+    graph.add(Box::new(tee));
+    let (chunks, chunks_out) = StreamChunks::new(spectrum, usize::from(FFT_SIZE));
     graph.add(Box::new(chunks));
     let window = rustradio::window::WindowType::Hamming
         .make_window(usize::from(FFT_SIZE))
@@ -118,11 +127,7 @@ async fn run_graph(settings: Connection, stop: Receiver<()>) -> rustradio::Resul
     });
     graph.add(Box::new(power));
     let rows_done = display(&mut graph, power_out, SPECTRUM);
-    let (chunks, windows) = StreamChunks::new(waveform, waveform_points);
-    graph.add(Box::new(chunks));
-    let (select, windows) = NCMap::new(windows, "contiguous waveform windows", contiguous::<Float>);
-    graph.add(Box::new(select));
-    let waveform_done = display(&mut graph, windows, TIME);
+    let waveform_done = waveform_display(&mut graph, filtered, waveform, waveform_points);
     let completed = until_stop(graph.run_async(wake), &stop).await;
     // Finish posting this session's rows before End enables another connection.
     // Otherwise an old row could arrive after the UI clears its new waterfall.
@@ -139,6 +144,44 @@ async fn run_graph(settings: Connection, stop: Receiver<()>) -> rustradio::Resul
     Ok(format!(
         "{outcome} · filtered: {lost} missing samples · demodulated: {demodulated_lost} missing samples"
     ))
+}
+
+fn waveform_display(
+    graph: &mut rustradio::wasm::wasm_graph::WasmGraph,
+    filtered: rustradio::stream::ReadStream<Complex>,
+    demodulated: rustradio::stream::ReadStream<Float>,
+    points: usize,
+) -> Receiver<()> {
+    let (align, filtered, demodulated) = StreamAlign::new(filtered, demodulated);
+    graph.add(Box::new(align));
+    let (convert, in_phase, quadrature) = ComplexToFloat::new(filtered);
+    graph.add(Box::new(convert));
+    let (chunks, in_phase) = StreamChunks::new(in_phase, points);
+    graph.add(Box::new(chunks));
+    let (chunks, quadrature) = StreamChunks::new(quadrature, points);
+    graph.add(Box::new(chunks));
+    let (chunks, demodulated) = StreamChunks::new(demodulated, points);
+    graph.add(Box::new(chunks));
+    let (frames, windows) = async_channel::bounded(2);
+    graph.add(Box::new(WaveformSink {
+        in_phase,
+        quadrature,
+        demodulated,
+        frames,
+    }));
+    let (done, finished) = async_channel::bounded(1);
+    spawn_local(async move {
+        while let Ok(window) = windows.recv().await {
+            if send_message(WorkerToMain::Floats(TIME.into(), window))
+                .await
+                .is_err()
+            {
+                break;
+            }
+        }
+        let _ = done.send(()).await;
+    });
+    finished
 }
 
 fn display(
