@@ -136,8 +136,8 @@ fn mount_time(sample_rate: f64) -> Result<(), JsValue> {
     let sink = TimeSink::mount_by_id(
         "time-sink",
         TimeSinkOptions {
-            title: "Aligned I/Q and demodulated · time sink".into(),
-            subtitle: "Latest 50 ms · filtered I, filtered Q, demodulated".into(),
+            title: "Aligned waveforms".into(),
+            subtitle: "50 ms windows · filtered I/Q and demodulated".into(),
             y_label: "Amplitude".into(),
             sample_rate,
             max_points,
@@ -153,8 +153,8 @@ pub(crate) fn setup() -> Result<(), JsValue> {
     let waterfall = WaterfallSink::mount_by_id(
         "waterfall",
         WaterfallSinkOptions {
-            title: "Filtered · waterfall".into(),
-            subtitle: "Frequency relative to the stream center".into(),
+            title: "Filtered spectrum".into(),
+            subtitle: "Waterfall · frequency relative to the stream center".into(),
             ..Default::default()
         },
     )

@@ -3,23 +3,52 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Sparslog stream viewer</title>
+  <meta name="theme-color" content="#f4f6f5">
+  <title>Sparslog · Signal monitor</title>
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
   <main>
-    <header><p>Sparslog</p><h1>Stream viewer</h1></header>
-    <section class="connection" aria-label="Stream connection">
-      <label>Host <input id="host" value="127.0.0.1" autocomplete="off" disabled></label>
-      <label>Port <input id="port" type="number" min="1" max="65535" value="9000" disabled></label>
-      <label class="tls"><input id="tls" type="checkbox" disabled> Secure connection (TLS)</label>
-      <div class="buttons"><button id="connect" disabled>Connect</button><button id="disconnect" disabled>Disconnect</button></div>
+    <header class="masthead">
+      <div class="brand">
+        <span class="brand-mark" aria-hidden="true">
+          <svg viewBox="0 0 32 32" fill="none"><path d="M4 17h5l3-9 5 17 4-12 3 4h4" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        </span>
+        <div><p class="eyebrow">Sparslog</p><h1>Signal monitor</h1></div>
+      </div>
+      <p class="masthead-note">Frequency &amp; time<br><span>Filtered I/Q · demodulated</span></p>
+    </header>
+
+    <section class="connection-card" aria-labelledby="connection-title">
+      <div class="connection-heading">
+        <h2 id="connection-title">Receiver connection</h2>
+        <span class="connection-protocol">IQ stream</span>
+      </div>
+      <div class="connection">
+        <label class="host-field" for="host">Host<input id="host" value="127.0.0.1" autocomplete="off" spellcheck="false" disabled></label>
+        <label class="port-field" for="port">Port<input id="port" type="number" min="1" max="65535" value="9000" disabled></label>
+        <label class="tls" for="tls"><input id="tls" type="checkbox" disabled><span>Secure connection<small>Use TLS</small></span></label>
+        <div class="buttons"><button id="connect" disabled>Connect <span aria-hidden="true">↗</span></button><button id="disconnect" disabled>Disconnect</button></div>
+      </div>
+      <div class="connection-footer">
+        <p id="status" role="status" aria-live="polite">Starting worker…</p>
+        <p class="help">Enter your receiver’s IQ listener address to begin.</p>
+      </div>
     </section>
-    <p class="help">Connect to sparslog’s IQ listener to view filtered and demodulated samples.</p>
-    <p id="status" role="status" aria-live="polite">Starting worker…</p>
+
+    <div class="section-label"><span>01 / Frequency</span><span>Filtered signal</span></div>
     <section id="waterfall" aria-label="Filtered waterfall">Loading waterfall…</section>
+
+    <div class="section-label"><span>02 / Time</span><span>Aligned streams</span></div>
     <section id="time-sink" aria-label="Aligned filtered I/Q and demodulated waveforms">Loading time sink…</section>
-    <details><summary>Log</summary><pre id="log-output">Awaiting logs…</pre></details>
+    <ul class="trace-legend" aria-label="Waveform trace colors">
+      <li><span class="trace-i" aria-hidden="true"></span>Filtered I</li>
+      <li><span class="trace-q" aria-hidden="true"></span>Filtered Q</li>
+      <li><span class="trace-demod" aria-hidden="true"></span>Demodulated</li>
+    </ul>
+
+    <details class="log-panel"><summary>Session log<span>Diagnostics</span></summary><pre id="log-output">Awaiting logs…</pre></details>
+    <footer class="page-footer"><span>Sparslog / Signal monitor</span><span>Sparsnäs receiver</span></footer>
   </main>
   <script type="module" src="wasm-mod.js"></script>
 </body>
