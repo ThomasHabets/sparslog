@@ -96,16 +96,16 @@ pub struct Opt {
     #[arg(long = "gain", default_value = "30")]
     gain: f32,
 
-    /// Sample rate in file or with dongle.
-    #[arg(long = "sample_rate", default_value_t = 1_024_000)]
+    /// Sample rate in file or with dongle; accepts k/M/G suffixes.
+    #[arg(long = "sample_rate", default_value = "1.024M", value_parser = parse_frequency::<u32>)]
     sample_rate: u32,
 
-    /// Desired channel frequency, in Hz.
-    #[arg(long = "freq", default_value_t = 868_000_000)]
+    /// Desired channel frequency in Hz; accepts k/M/G suffixes.
+    #[arg(long = "freq", default_value = "868M", value_parser = parse_frequency::<u64>)]
     freq: u64,
 
-    /// Live RTL-SDR tuning offset in Hz; zero disables frequency translation.
-    #[arg(long, default_value_t = 100_000, allow_hyphen_values = true)]
+    /// Live RTL-SDR tuning offset in Hz (k/M/G supported); zero disables translation.
+    #[arg(long, default_value = "100k", allow_hyphen_values = true, value_parser = parse_frequency::<i64>)]
     tune_offset: i64,
 
     /// FSK offset value.
@@ -486,6 +486,15 @@ fn iq_tap<T: rustradio::iq_stream::IqSample>(
     Ok(decoder)
 }
 
+// Keep the graph's integer-Hz interfaces while accepting rustradio's unit syntax.
+fn parse_frequency<T: num::NumCast>(text: &str) -> std::result::Result<T, String> {
+    let hz = rustradio::parse_frequency(text)?;
+    if !hz.is_finite() || hz.fract() != 0.0 {
+        return Err("frequency must be a finite whole number of Hz".into());
+    }
+    num::cast(hz).ok_or_else(|| "frequency is outside the allowed range".into())
+}
+
 fn rtl_tune_frequency(opt: &Opt) -> anyhow::Result<u64> {
     let frequency = opt
         .freq
@@ -650,6 +659,53 @@ mod tests {
     use super::*;
     use clap::Parser;
     use std::time::Duration;
+
+    #[test]
+    fn frequency_flags_accept_units() -> anyhow::Result<()> {
+        for (frequency, rate, offset) in [
+            ("868M", "1.024M", "100k"),
+            ("0.868g", "1024K", "0.1m"),
+            ("868_000_000", "1_024_000", "100_000"),
+        ] {
+            let opt = Opt::try_parse_from([
+                "sparslog",
+                "--serial",
+                "123456",
+                "--freq",
+                frequency,
+                "--sample_rate",
+                rate,
+                "--tune-offset",
+                offset,
+            ])?;
+            assert_eq!(opt.freq, 868_000_000);
+            assert_eq!(opt.sample_rate, 1_024_000);
+            assert_eq!(opt.tune_offset, 100_000);
+        }
+        let negative =
+            Opt::try_parse_from(["sparslog", "--serial", "123456", "--tune-offset", "-100k"])?;
+        assert_eq!(negative.tune_offset, -100_000);
+        for flag in ["--freq", "--sample_rate", "--tune-offset"] {
+            for invalid in ["invalid", "NaN", "inf", "0.1", "100Gk", "1e100"] {
+                assert!(
+                    Opt::try_parse_from(["sparslog", "--serial", "123456", flag, invalid,])
+                        .is_err()
+                );
+            }
+        }
+        for (flag, invalid) in [
+            ("--freq", "-1k"),
+            ("--sample_rate", "-1k"),
+            ("--sample_rate", "4294967296"),
+            ("--freq", "18446744073709551616"),
+            ("--tune-offset", "9223372036854775808"),
+        ] {
+            assert!(
+                Opt::try_parse_from(["sparslog", "--serial", "123456", flag, invalid,]).is_err()
+            );
+        }
+        Ok(())
+    }
 
     #[test]
     fn rtl_tuning_options() -> anyhow::Result<()> {
