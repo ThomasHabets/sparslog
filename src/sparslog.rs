@@ -8,8 +8,9 @@ use log::debug;
 
 use rustradio::block::{Block, BlockRet};
 use rustradio::blocks::{
-    AddConst, BinarySlicer, FftFilter, FileSource, IqStreamSink, QuadratureDemod,
-    RationalResampler, RtlSdrDecode, RtlSdrSource, TcpSource, Tee, ZeroCrossing,
+    AddConst, BinarySlicer, FftFilter, FileSource, IqStreamSink, Multiply, QuadratureDemod,
+    RationalResampler, RtlSdrDecode, RtlSdrSource, SignalSourceComplex, TcpSource, Tee,
+    ZeroCrossing,
 };
 use rustradio::graph::GraphRunner;
 use rustradio::iq_stream::IqServer;
@@ -99,9 +100,13 @@ pub struct Opt {
     #[arg(long = "sample_rate", default_value_t = 1_024_000)]
     sample_rate: u32,
 
-    /// Frequency to tune to, in Hz.
+    /// Desired channel frequency, in Hz.
     #[arg(long = "freq", default_value_t = 868_000_000)]
     freq: u64,
+
+    /// Live RTL-SDR tuning offset in Hz; zero disables frequency translation.
+    #[arg(long, default_value_t = 100_000, allow_hyphen_values = true)]
+    tune_offset: i64,
 
     /// FSK offset value.
     #[arg(long = "offset", default_value = "0.4")]
@@ -481,6 +486,46 @@ fn iq_tap<T: rustradio::iq_stream::IqSample>(
     Ok(decoder)
 }
 
+fn rtl_tune_frequency(opt: &Opt) -> anyhow::Result<u64> {
+    let frequency = opt
+        .freq
+        .checked_add_signed(opt.tune_offset)
+        .filter(|frequency| *frequency > 0 && u32::try_from(*frequency).is_ok())
+        .ok_or_else(|| {
+            anyhow!(
+                "RTL-SDR tuning frequency must be between 1 and {} Hz",
+                u32::MAX
+            )
+        })?;
+    // Include the low-pass filter's 50 kHz passband and 10 kHz transition.
+    if opt.tune_offset.unsigned_abs() + 60_000 > u64::from(opt.sample_rate) / 2 {
+        return Err(anyhow!(
+            "RTL-SDR tuning offset plus 60 kHz must fit within half the sample rate"
+        ));
+    }
+    Ok(frequency)
+}
+
+#[allow(clippy::cast_precision_loss)]
+fn translate_rtl(
+    graph: &mut (impl GraphRunner + ?Sized),
+    samples: ReadStream<Complex>,
+    sample_rate: u32,
+    offset: i64,
+) -> ReadStream<Complex> {
+    if offset == 0 {
+        return samples;
+    }
+    // Tuning above the channel places it at -offset; mix it back to DC.
+    let (oscillator, oscillator_out) =
+        SignalSourceComplex::new(sample_rate as f32, offset as f32, 1.0);
+    graph.add(Box::new(oscillator));
+    // Multiply retains tags from its first input.
+    let (mixer, centered) = Multiply::new(samples, oscillator_out);
+    graph.add(Box::new(mixer));
+    centered
+}
+
 /// Create the graph to decode sparsnäs, retaining the returned IQ listener
 /// until graph execution ends.
 ///
@@ -530,12 +575,14 @@ pub fn create_graph(
                 blockchain![graph, prev, FileSource::<Complex>::new(read)?]
             }
         } else if opt.rtlsdr {
-            blockchain![
+            let frequency = rtl_tune_frequency(opt)?;
+            let samples = blockchain![
                 graph,
                 prev,
-                RtlSdrSource::new(opt.freq, opt.sample_rate, f32_to_i32(opt.gain)?)?,
+                RtlSdrSource::new(frequency, opt.sample_rate, f32_to_i32(opt.gain)?)?,
                 RtlSdrDecode::new(prev),
-            ]
+            ];
+            translate_rtl(graph, samples, opt.sample_rate, opt.tune_offset)
         } else {
             return Err(anyhow::Error::msg(
                 "Need to provide either -r, -c, or --rtlsdr",
@@ -603,6 +650,141 @@ mod tests {
     use super::*;
     use clap::Parser;
     use std::time::Duration;
+
+    #[test]
+    fn rtl_tuning_options() -> anyhow::Result<()> {
+        let defaults = Opt::try_parse_from(["sparslog", "--serial", "123456", "--rtlsdr"])?;
+        assert_eq!(defaults.tune_offset, 100_000);
+        assert_eq!(rtl_tune_frequency(&defaults)?, 868_100_000);
+        for (offset, expected) in [("-100000", 867_900_000), ("0", 868_000_000)] {
+            let opt = Opt::try_parse_from([
+                "sparslog",
+                "--serial",
+                "123456",
+                "--rtlsdr",
+                "--tune-offset",
+                offset,
+            ])?;
+            assert_eq!(rtl_tune_frequency(&opt)?, expected);
+        }
+        let mut opt = defaults;
+        for offset in [452_001, -452_001, i64::MAX, i64::MIN] {
+            opt.tune_offset = offset;
+            assert!(rtl_tune_frequency(&opt).is_err());
+        }
+        opt.tune_offset = -100_000;
+        opt.freq = 99_999;
+        assert!(rtl_tune_frequency(&opt).is_err());
+        opt.tune_offset = 100_000;
+        opt.freq = u64::from(u32::MAX);
+        assert!(rtl_tune_frequency(&opt).is_err());
+        opt.freq = u64::MAX;
+        assert!(rtl_tune_frequency(&opt).is_err());
+        opt.freq = 868_000_000;
+        opt.sample_rate = 0;
+        assert!(rtl_tune_frequency(&opt).is_err());
+        Ok(())
+    }
+
+    #[tokio::test]
+    #[allow(clippy::cast_precision_loss)]
+    async fn rtl_translation_centers_channel_and_rejects_dc() -> anyhow::Result<()> {
+        use rustradio::blocks::{VectorSink, VectorSource};
+        const RATE: u32 = 1_024_000;
+        for offset in [-100_000, 100_000] {
+            for desired_signal in [false, true] {
+                let samples = (0..8192)
+                    .map(|index| {
+                        let phase = -2.0 * std::f32::consts::PI * offset as f32 * index as f32
+                            / RATE as f32;
+                        let signal = if desired_signal {
+                            Complex::from_polar(1.0, phase)
+                        } else {
+                            Complex::default()
+                        };
+                        signal + Complex::new(1.0, 0.0)
+                    })
+                    .collect();
+                let mut graph = rustradio::graph::Graph::new();
+                let (source, samples) = VectorSource::new(samples);
+                graph.add(Box::new(source));
+                let centered = translate_rtl(&mut graph, samples, RATE, offset);
+                let (filter, output) = FftFilter::new(
+                    centered,
+                    rustradio::fir::low_pass_complex(
+                        RATE as f32,
+                        50_000.0,
+                        10_000.0,
+                        &WindowType::Hamming,
+                    ),
+                );
+                graph.add(Box::new(filter));
+                let sink = VectorSink::new(output, 16_384);
+                let captured = sink.hook();
+                graph.add(Box::new(sink));
+                run_sync_graph(graph).await?;
+                let captured = captured.data();
+                let settled = &captured.samples()[1024..];
+                assert!(settled.len() > 4096);
+                let average = settled.iter().copied().sum::<Complex>() / settled.len() as f32;
+                let expected = if desired_signal { 1.0 } else { 0.0 };
+                assert!((average.norm() - expected).abs() < 0.01);
+                // The passed channel must be at DC, not just inside the passband.
+                assert!(
+                    settled
+                        .iter()
+                        .all(|sample| (*sample - average).norm() < 0.02)
+                );
+            }
+        }
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn rtl_recordings_ignore_tuning_offset() -> anyhow::Result<()> {
+        let (_file, mut opt) = iq_fixture()?;
+        opt.iq_listen = None;
+        // This would fail validation or try to open hardware if applied to files.
+        opt.tune_offset = i64::MIN;
+        for raw_rtl in [false, true] {
+            opt.rtlsdr = raw_rtl;
+            let mut graph = rustradio::graph::Graph::new();
+            assert!(create_graph(&mut graph, &opt)?.is_none());
+            run_sync_graph(graph).await?;
+        }
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn rtl_translation_preserves_tags_and_zero_offset() -> anyhow::Result<()> {
+        use rustradio::blocks::{VectorSink, VectorSource};
+        use rustradio::stream::{Tag, TagValue};
+        for offset in [0, 100_000] {
+            let tag = Tag::new(7, "test-position", TagValue::U64(123));
+            let (source, samples) = VectorSource::builder(vec![Complex::new(1.0, 0.0); 64])
+                .tags(std::slice::from_ref(&tag))
+                .build()?;
+            let mut graph = rustradio::graph::Graph::new();
+            graph.add(Box::new(source));
+            let output = translate_rtl(&mut graph, samples, 1_024_000, offset);
+            let sink = VectorSink::new(output, 64);
+            let captured = sink.hook();
+            graph.add(Box::new(sink));
+            run_sync_graph(graph).await?;
+            let captured = captured.data();
+            assert_eq!(captured.samples().len(), 64);
+            assert!(captured.tags().contains(&tag));
+            if offset == 0 {
+                assert!(
+                    captured
+                        .samples()
+                        .iter()
+                        .all(|sample| *sample == Complex::new(1.0, 0.0))
+                );
+            }
+        }
+        Ok(())
+    }
 
     fn iq_fixture() -> anyhow::Result<(tempfile::NamedTempFile, Opt)> {
         let mut file = tempfile::NamedTempFile::new()?;

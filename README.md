@@ -33,6 +33,16 @@ $ ./target/release/sparslog -s 123456 --rtlsdr
 
 It'll print stuff, and log to `sparslog.csv`.
 
+For a live RTL-SDR dongle, `--freq` specifies the desired channel (default
+868 MHz). The dongle tunes 100 kHz above that channel, and samples are translated
+back to baseband before the low-pass filter to reject the hardware's DC spike.
+Use `--tune-offset HZ` to change this signed tuning offset, or
+`--tune-offset 0` for direct tuning. For example, `--tune-offset -100000` tunes
+100 kHz below the channel. The offset magnitude plus the filter's 60 kHz edge must fit
+within half the input sample rate. File inputs, including `--read --rtlsdr`, and
+TCP inputs are already centered and are not translated. The existing `--offset`
+option still adjusts the demodulated FSK signal.
+
 The format is
 `timestamp,sequence_number,watts,kwh,battery_status,CRC_status`
 
