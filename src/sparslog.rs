@@ -88,8 +88,8 @@ pub struct Opt {
     #[arg(long = "rtlsdr")]
     rtlsdr: bool,
 
-    /// Verbosity level.
-    #[arg(short, default_value = "0")]
+    /// Log level: error, warn, info, debug, or trace.
+    #[arg(short, default_value = "error", value_parser = rustradio::parse_verbosity)]
     pub verbose: usize,
 
     /// Input gain. Used with --rtlsdr.
@@ -659,6 +659,16 @@ mod tests {
     use super::*;
     use clap::Parser;
     use std::time::Duration;
+
+    #[test]
+    fn verbosity_flag_accepts_log_levels() -> anyhow::Result<()> {
+        let default = Opt::try_parse_from(["sparslog", "--serial", "123456"])?;
+        assert_eq!(default.verbose, 0);
+        let debug = Opt::try_parse_from(["sparslog", "--serial", "123456", "-v", "debug"])?;
+        assert_eq!(debug.verbose, 3);
+        assert!(Opt::try_parse_from(["sparslog", "--serial", "123456", "-v", "3"]).is_err());
+        Ok(())
+    }
 
     #[test]
     fn frequency_flags_accept_units() -> anyhow::Result<()> {
