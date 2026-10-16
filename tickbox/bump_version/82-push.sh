@@ -1,2 +1,2 @@
 #!/usr/bin/env bash
-exec git push
+exec git push --tags origin HEAD
