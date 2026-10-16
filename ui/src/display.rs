@@ -25,6 +25,26 @@ impl Block for DisplaySink {
     }
 }
 
+#[derive(rustradio_macros::Block)]
+pub(crate) struct MessageSink {
+    #[rustradio(in)]
+    pub(crate) src: NCReadStream<String>,
+    pub(crate) messages: Sender<String>,
+}
+
+impl Block for MessageSink {
+    fn work(&mut self) -> rustradio::Result<BlockRet<'_>> {
+        if self.messages.is_full() {
+            return Ok(BlockRet::Pending);
+        }
+        if let Some((message, _)) = self.src.pop() {
+            let _ = self.messages.try_send(message);
+            return Ok(BlockRet::Again);
+        }
+        Ok(BlockRet::WaitForStream(&self.src, 1))
+    }
+}
+
 // Post each aligned window as one message so queue overflow drops all traces
 // together. Chunking and sample alignment remain rustradio graph operations.
 #[derive(rustradio_macros::Block)]
@@ -94,6 +114,22 @@ pub(crate) fn waveform_size(rate: f64) -> rustradio::Result<usize> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn decoded_messages_wait_for_display_capacity() -> rustradio::Result<()> {
+        let (tx, src) = rustradio::stream::new_nocopy_stream();
+        let (messages, rx) = async_channel::bounded(1);
+        let mut sink = MessageSink { src, messages };
+        tx.push("hello 🦀".into(), &[]);
+        tx.push(String::new(), &[]);
+        sink.work()?;
+        assert!(matches!(sink.work()?, BlockRet::Pending));
+        assert_eq!(rx.try_recv().unwrap(), "hello 🦀");
+        sink.work()?;
+        assert_eq!(rx.try_recv().unwrap(), "");
+        assert!(sink.src.is_empty());
+        Ok(())
+    }
 
     #[test]
     fn waveform_window_matches_negotiated_rate() -> rustradio::Result<()> {

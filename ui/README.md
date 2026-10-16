@@ -2,7 +2,8 @@
 
 View `filtered` as a waterfall and aligned filtered I/Q plus `demodulated`
 as three traces in a 50 ms time sink.
-Both streams use the receiver’s existing nonblocking IQ listener.
+Decoded CSV strings appear below the plots, retaining the latest 200 records.
+All three streams use the receiver’s existing nonblocking IQ listener.
 
 ## Build and run
 
@@ -26,8 +27,9 @@ your choice. Plot canvases currently follow the system theme because rustradio-u
 does not expose a theme override.
 
 Enter the listener’s host and port and click **Connect**. **Disconnect** closes
-both streams; reconnecting clears both plots. HTTPS pages default to TLS and
-require a `wss://` backend, typically provided by a reverse proxy.
+all three streams; reconnecting clears the plots and decoded records. HTTPS
+pages default to TLS and require a `wss://` backend, typically provided by a
+reverse proxy.
 
 `./build-local.sh release` produces optimized output in `web-dist/`. The static
 server supplies the COOP/COEP headers required for the shared-memory worker.
@@ -48,13 +50,14 @@ Q. The time sink shows all three aligned traces in successive 50 ms windows with
 pause, autoscale, and Y-range controls. Alignment uses absolute sample tags and
 requires equal sample rates. Both axes use the negotiated sample rates.
 
-Both connections allow gaps. Alignment drops unmatched samples. Time windows
+All connections allow gaps. Alignment drops unmatched samples. Time windows
 containing a gap in any trace are discarded together; waveform
 history is cleared between windows so traces cannot span missing samples.
 Display queues are bounded and may drop windows if rendering is slow. Network
 missing-sample counts are reported separately for each stream when the session
-ends. A failure of either connection ends the session. There is no automatic
-reconnection or recording.
+ends. The `decoded` connection preserves individual UTF-8 strings, including
+empty messages. Its missing-message count is reported at session end. A failure of
+any connection ends the session. There is no automatic reconnection or recording.
 
 ## Checks
 

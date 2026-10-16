@@ -76,8 +76,9 @@ enabled for IQ and string streaming.
 ### Browser stream viewer
 
 The [WASM stream viewer](ui/README.md) displays `filtered` as a waterfall and
-aligned filtered I/Q plus `demodulated` in a time sink. Build and serve it from
-the `ui/` subdirectory, then connect to the receiver's `--iq-listen` address.
+aligned filtered I/Q plus `demodulated` in a time sink, and decoded records.
+Build and serve it from the `ui/` subdirectory, then connect to the receiver's
+`--iq-listen` address.
 
 ### Decoder with tokio-console
 

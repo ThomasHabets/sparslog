@@ -115,3 +115,15 @@ pre { margin: 0; padding: 16px 20px; border-top: 1px solid var(--border); white-
   .brand { gap: 10px; }
   .theme-control select { max-width: 96px; }
 }
+
+.decoded-panel {
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 1rem;
+}
+.decoded-panel pre {
+  max-height: 20rem;
+  overflow: auto;
+  margin: 0;
+  font-size: 0.85rem;
+}

@@ -9,6 +9,7 @@ use wasm_bindgen_futures::spawn_local;
 use crate::{AppMessage, Connection, MainToWorker, WorkerToMain};
 
 thread_local! {
+    static DECODED: RefCell<std::collections::VecDeque<String>> = const { RefCell::new(std::collections::VecDeque::new()) };
     static TIME: RefCell<Option<TimeSink>> = const { RefCell::new(None) };
     static WATERFALL: OnceCell<WaterfallSink> = const { OnceCell::new() };
 }
@@ -66,6 +67,8 @@ fn connect() {
             .map_err(|e| JsValue::from_str(&e.to_string()))?;
         TIME.with(|slot| slot.borrow().as_ref().expect("mounted time sink").clear())
             .map_err(|e| JsValue::from_str(&e.to_string()))?;
+        DECODED.with(|messages| messages.borrow_mut().clear());
+        get_element("decoded-output")?.set_text_content(Some("Waiting for decoded messages…"));
         controls(true)?;
         status("Connecting…")?;
         spawn_local(async move {
@@ -124,6 +127,21 @@ async fn worker_msg(message: WorkerToMain) -> Result<(), JsValue> {
                 Ok::<_, rustradio::Error>(())
             })
             .map_err(|e| JsValue::from_str(&e.to_string()))?;
+        }
+        WorkerToMain::ApplicationSpecific(AppMessage::Decoded(message)) => {
+            let text = DECODED.with(|messages| {
+                let mut messages = messages.borrow_mut();
+                if messages.len() == 200 {
+                    messages.pop_front();
+                }
+                messages.push_back(message);
+                messages
+                    .iter()
+                    .map(String::as_str)
+                    .collect::<Vec<_>>()
+                    .join("\n")
+            });
+            get_element("decoded-output")?.set_text_content(Some(&text));
         }
         WorkerToMain::End(message) => {
             status(&message)?;

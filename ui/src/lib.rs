@@ -17,6 +17,7 @@ pub(crate) struct Connection {
 #[cfg(target_arch = "wasm32")]
 pub(crate) enum AppMessage {
     Stop,
+    Decoded(String),
     Connected {
         filtered_rate: f32,
         demodulated_rate: f64,

@@ -8,11 +8,11 @@ use rustradio::graph::GraphRunner;
 use rustradio::iq_stream::{StreamOptions, proto};
 use rustradio::{Complex, Float};
 use rustradio_ui::AppEmpty;
-use rustradio_ui::worker::{IqStreamSource, send_message};
+use rustradio_ui::worker::{IqStreamSource, IqStreamStringSource, send_message};
 use wasm_bindgen::JsValue;
 use wasm_bindgen_futures::spawn_local;
 
-use crate::display::{DisplaySink, WaveformSink, waveform_size, window_chunk};
+use crate::display::{DisplaySink, MessageSink, WaveformSink, waveform_size, window_chunk};
 use crate::{AppMessage, Connection, MainToWorker, WorkerToMain};
 
 pub(crate) const SPECTRUM: &str = "spectrum";
@@ -60,7 +60,20 @@ async fn run_graph(settings: Connection, stop: Receiver<()>) -> rustradio::Resul
         return Ok("Disconnected".into());
     };
     let Some((demodulated, waveform, demodulated_handle)) = until_stop(
-        IqStreamSource::<Float>::connect(&settings.url, "demodulated", options, poke),
+        IqStreamSource::<Float>::connect(
+            &settings.url,
+            "demodulated",
+            options.clone(),
+            poke.clone(),
+        ),
+        &stop,
+    )
+    .await?
+    else {
+        return Ok("Disconnected".into());
+    };
+    let Some((decoded, messages, decoded_handle)) = until_stop(
+        IqStreamStringSource::connect(&settings.url, "decoded", options, poke.clone()),
         &stop,
     )
     .await?
@@ -92,6 +105,64 @@ async fn run_graph(settings: Connection, stop: Receiver<()>) -> rustradio::Resul
     let mut graph = rustradio::wasm::wasm_graph::WasmGraph::new();
     graph.add(Box::new(source));
     graph.add(Box::new(demodulated));
+    graph.add(Box::new(decoded));
+    let messages_done = message_display(&mut graph, messages, poke);
+    let (filtered, rows_done) = spectrum_display(&mut graph, samples, sample_rate)?;
+    let waveform_done = waveform_display(&mut graph, filtered, waveform, waveform_points)?;
+    let completed = until_stop(graph.run_async(wake), &stop).await;
+    // Finish posting this session's rows before End enables another connection.
+    // Otherwise an old row could arrive after the UI clears its new waterfall.
+    drop(graph);
+    let _ = rows_done.recv().await;
+    let _ = waveform_done.recv().await;
+    let _ = messages_done.recv().await;
+    let decoded_lost = decoded_handle.lost_samples();
+    let lost = handle.lost_samples();
+    let demodulated_lost = demodulated_handle.lost_samples();
+    let outcome = match completed {
+        Ok(Some(())) => "Streams completed".to_owned(),
+        Ok(None) => "Disconnected".to_owned(),
+        Err(error) => format!("Stream failed: {error}"),
+    };
+    Ok(format!(
+        "{outcome} · filtered: {lost} missing samples · demodulated: {demodulated_lost} missing samples · decoded: {decoded_lost} missing messages"
+    ))
+}
+
+fn message_display(
+    graph: &mut rustradio::wasm::wasm_graph::WasmGraph,
+    messages: rustradio::stream::NCReadStream<String>,
+    poke: Sender<()>,
+) -> Receiver<()> {
+    let (message_tx, message_rx) = async_channel::bounded(32);
+    graph.add(Box::new(MessageSink {
+        src: messages,
+        messages: message_tx,
+    }));
+    let (notify_done, messages_done) = async_channel::bounded(1);
+    spawn_local(async move {
+        while let Ok(message) = message_rx.recv().await {
+            // Wake the graph after freeing space in the display queue.
+            let _ = poke.try_send(());
+            if send_message(WorkerToMain::ApplicationSpecific(AppMessage::Decoded(
+                message,
+            )))
+            .await
+            .is_err()
+            {
+                break;
+            }
+        }
+        let _ = notify_done.send(()).await;
+    });
+    messages_done
+}
+
+fn spectrum_display(
+    graph: &mut rustradio::wasm::wasm_graph::WasmGraph,
+    samples: rustradio::stream::ReadStream<Complex>,
+    sample_rate: f32,
+) -> rustradio::Result<(rustradio::stream::ReadStream<Complex>, Receiver<()>)> {
     let (tee, spectrum, filtered) = Tee::new(samples)?;
     graph.add(Box::new(tee));
     let (chunks, chunks_out) = StreamChunks::new(spectrum, usize::from(FFT_SIZE))?;
@@ -126,24 +197,8 @@ async fn run_graph(settings: Connection, stop: Receiver<()>) -> rustradio::Resul
         )]
     });
     graph.add(Box::new(power));
-    let rows_done = display(&mut graph, power_out, SPECTRUM);
-    let waveform_done = waveform_display(&mut graph, filtered, waveform, waveform_points)?;
-    let completed = until_stop(graph.run_async(wake), &stop).await;
-    // Finish posting this session's rows before End enables another connection.
-    // Otherwise an old row could arrive after the UI clears its new waterfall.
-    drop(graph);
-    let _ = rows_done.recv().await;
-    let _ = waveform_done.recv().await;
-    let lost = handle.lost_samples();
-    let demodulated_lost = demodulated_handle.lost_samples();
-    let outcome = match completed {
-        Ok(Some(())) => "Streams completed".to_owned(),
-        Ok(None) => "Disconnected".to_owned(),
-        Err(error) => format!("Stream failed: {error}"),
-    };
-    Ok(format!(
-        "{outcome} · filtered: {lost} missing samples · demodulated: {demodulated_lost} missing samples"
-    ))
+    let rows_done = display(graph, power_out, SPECTRUM);
+    Ok((filtered, rows_done))
 }
 
 fn waveform_display(
