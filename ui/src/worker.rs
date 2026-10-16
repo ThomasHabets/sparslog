@@ -92,9 +92,9 @@ async fn run_graph(settings: Connection, stop: Receiver<()>) -> rustradio::Resul
     let mut graph = rustradio::wasm::wasm_graph::WasmGraph::new();
     graph.add(Box::new(source));
     graph.add(Box::new(demodulated));
-    let (tee, spectrum, filtered) = Tee::new(samples);
+    let (tee, spectrum, filtered) = Tee::new(samples)?;
     graph.add(Box::new(tee));
-    let (chunks, chunks_out) = StreamChunks::new(spectrum, usize::from(FFT_SIZE));
+    let (chunks, chunks_out) = StreamChunks::new(spectrum, usize::from(FFT_SIZE))?;
     graph.add(Box::new(chunks));
     let window = rustradio::window::WindowType::Hamming
         .make_window(usize::from(FFT_SIZE))
@@ -127,7 +127,7 @@ async fn run_graph(settings: Connection, stop: Receiver<()>) -> rustradio::Resul
     });
     graph.add(Box::new(power));
     let rows_done = display(&mut graph, power_out, SPECTRUM);
-    let waveform_done = waveform_display(&mut graph, filtered, waveform, waveform_points);
+    let waveform_done = waveform_display(&mut graph, filtered, waveform, waveform_points)?;
     let completed = until_stop(graph.run_async(wake), &stop).await;
     // Finish posting this session's rows before End enables another connection.
     // Otherwise an old row could arrive after the UI clears its new waterfall.
@@ -151,16 +151,16 @@ fn waveform_display(
     filtered: rustradio::stream::ReadStream<Complex>,
     demodulated: rustradio::stream::ReadStream<Float>,
     points: usize,
-) -> Receiver<()> {
-    let (align, filtered, demodulated) = StreamAlign::new(filtered, demodulated);
+) -> rustradio::Result<Receiver<()>> {
+    let (align, filtered, demodulated) = StreamAlign::new(filtered, demodulated)?;
     graph.add(Box::new(align));
-    let (convert, in_phase, quadrature) = ComplexToFloat::new(filtered);
+    let (convert, in_phase, quadrature) = ComplexToFloat::new(filtered)?;
     graph.add(Box::new(convert));
-    let (chunks, in_phase) = StreamChunks::new(in_phase, points);
+    let (chunks, in_phase) = StreamChunks::new(in_phase, points)?;
     graph.add(Box::new(chunks));
-    let (chunks, quadrature) = StreamChunks::new(quadrature, points);
+    let (chunks, quadrature) = StreamChunks::new(quadrature, points)?;
     graph.add(Box::new(chunks));
-    let (chunks, demodulated) = StreamChunks::new(demodulated, points);
+    let (chunks, demodulated) = StreamChunks::new(demodulated, points)?;
     graph.add(Box::new(chunks));
     let (frames, windows) = async_channel::bounded(2);
     graph.add(Box::new(WaveformSink {
@@ -181,7 +181,7 @@ fn waveform_display(
         }
         let _ = done.send(()).await;
     });
-    finished
+    Ok(finished)
 }
 
 fn display(

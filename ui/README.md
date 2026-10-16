@@ -33,10 +33,10 @@ require a `wss://` backend, typically provided by a reverse proxy.
 server supplies the COOP/COEP headers required for the shared-memory worker.
 Other hosting must supply the same headers and serve the assets from one origin.
 
-This crate is an independent Cargo workspace using published `rustradio-ui`
-0.1.25 and a local crates.io patch for `rustradio` from `../../rustradio`.
-The sibling checkout provides the unreleased `StreamAlign` block and must be
-present to build. The build copies UI assets from the resolved registry package.
+This crate is an independent Cargo workspace using published `rustradio` 0.19
+and `rustradio-ui` 0.2.4. Both crates enable their `unstable` features for IQ
+and string streaming. The build copies UI assets from the resolved registry
+package.
 
 ## Displays
 

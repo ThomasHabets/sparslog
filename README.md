@@ -68,8 +68,8 @@ gRPC and WebSocket (`ws://127.0.0.1:9000/iq/v1/stream`) on the same port.
 Clients must allow gaps: absent or slow clients do not stop decoding, and
 overflow is reported as gaps. Streaming is disabled unless the option is given.
 
-Building requires the sibling `../rustradio` checkout (version 0.18.6), selected
-through the Cargo crates.io patch override with its `unstable` feature enabled.
+Building uses the published rustradio 0.19 crate with its `unstable` feature
+enabled for IQ and string streaming.
 
 ### Browser stream viewer
 

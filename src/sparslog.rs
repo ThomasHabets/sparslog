@@ -476,7 +476,7 @@ fn iq_tap<T: rustradio::iq_stream::IqSample>(
     let Some(server) = server else {
         return Ok(input);
     };
-    let (tee, decoder, tapped) = Tee::new(input);
+    let (tee, decoder, tapped) = Tee::new(input)?;
     graph.add(Box::new(tee));
     graph.add(Box::new(
         IqStreamSink::builder(tapped, server, name, sample_rate)
@@ -521,18 +521,18 @@ fn translate_rtl(
     samples: ReadStream<Complex>,
     sample_rate: u32,
     offset: i64,
-) -> ReadStream<Complex> {
+) -> Result<ReadStream<Complex>> {
     if offset == 0 {
-        return samples;
+        return Ok(samples);
     }
     // Tuning above the channel places it at -offset; mix it back to DC.
     let (oscillator, oscillator_out) =
-        SignalSourceComplex::new(sample_rate as f32, offset as f32, 1.0);
+        SignalSourceComplex::new(sample_rate as f32, offset as f32, 1.0)?;
     graph.add(Box::new(oscillator));
     // Multiply retains tags from its first input.
-    let (mixer, centered) = Multiply::new(samples, oscillator_out);
+    let (mixer, centered) = Multiply::new(samples, oscillator_out)?;
     graph.add(Box::new(mixer));
-    centered
+    Ok(centered)
 }
 
 /// Create the graph to decode sparsnäs, retaining the returned IQ listener
@@ -571,14 +571,14 @@ pub fn create_graph(
             let host = format!("{}", sa.ip());
             let port = sa.port();
             println!("Connecting to host {host} port {port}");
-            blockchain![graph, prev, TcpSource::<Complex>::new(&host, port)?]
+            blockchain![graph, prev, TcpSource::<Complex>::new(sa)?]
         } else if let Some(read) = &opt.read {
             if opt.rtlsdr {
                 blockchain![
                     graph,
                     prev,
                     FileSource::<u8>::new(read)?,
-                    RtlSdrDecode::new(prev),
+                    RtlSdrDecode::new(prev)?,
                 ]
             } else {
                 blockchain![graph, prev, FileSource::<Complex>::new(read)?]
@@ -589,9 +589,9 @@ pub fn create_graph(
                 graph,
                 prev,
                 RtlSdrSource::new(frequency, opt.sample_rate, f32_to_i32(opt.gain)?)?,
-                RtlSdrDecode::new(prev),
+                RtlSdrDecode::new(prev)?,
             ];
-            translate_rtl(graph, samples, opt.sample_rate, opt.tune_offset)
+            translate_rtl(graph, samples, opt.sample_rate, opt.tune_offset)?
         } else {
             return Err(anyhow::Error::msg(
                 "Need to provide either -r, -c, or --rtlsdr",
@@ -613,8 +613,8 @@ pub fn create_graph(
         // probably be more CPU efficient.
         FftFilter::new(
             prev,
-            rustradio::fir::low_pass_complex(samp_rate, 50000.0, 10000.0, &WindowType::Hamming)
-        ),
+            rustradio::fir::low_pass_complex(samp_rate, 50000.0, 10000.0, &WindowType::Hamming)?
+        )?,
         RationalResampler::new(prev, f32_to_usize(samp_rate_2)?, f32_to_usize(samp_rate)?)?,
     ];
     let server = opt.iq_listen.map(|_| IqServer::new());
@@ -628,8 +628,8 @@ pub fn create_graph(
     let prev = blockchain![
         graph,
         prev,
-        QuadratureDemod::new(prev, 1.0),
-        AddConst::new(prev, opt.offset),
+        QuadratureDemod::new(prev, 1.0)?,
+        AddConst::new(prev, opt.offset)?,
     ];
     let prev = iq_tap(
         graph,
@@ -641,8 +641,8 @@ pub fn create_graph(
     let prev = blockchain![
         graph,
         prev,
-        ZeroCrossing::new(prev, samp_rate_2 / baud, 0.1),
-        BinarySlicer::new(prev),
+        ZeroCrossing::new(prev, samp_rate_2 / baud, 0.1)?,
+        BinarySlicer::new(prev)?,
     ];
 
     // Decode.
@@ -759,7 +759,7 @@ mod tests {
         const RATE: u32 = 1_024_000;
         for offset in [-100_000, 100_000] {
             for desired_signal in [false, true] {
-                let samples = (0..8192)
+                let samples: Vec<_> = (0..8192)
                     .map(|index| {
                         let phase = -2.0 * std::f32::consts::PI * offset as f32 * index as f32
                             / RATE as f32;
@@ -772,9 +772,9 @@ mod tests {
                     })
                     .collect();
                 let mut graph = rustradio::graph::Graph::new();
-                let (source, samples) = VectorSource::new(samples);
+                let (source, samples) = VectorSource::new(samples)?;
                 graph.add(Box::new(source));
-                let centered = translate_rtl(&mut graph, samples, RATE, offset);
+                let centered = translate_rtl(&mut graph, samples, RATE, offset)?;
                 let (filter, output) = FftFilter::new(
                     centered,
                     rustradio::fir::low_pass_complex(
@@ -782,8 +782,8 @@ mod tests {
                         50_000.0,
                         10_000.0,
                         &WindowType::Hamming,
-                    ),
-                );
+                    )?,
+                )?;
                 graph.add(Box::new(filter));
                 let sink = VectorSink::new(output, 16_384);
                 let captured = sink.hook();
@@ -832,7 +832,7 @@ mod tests {
                 .build()?;
             let mut graph = rustradio::graph::Graph::new();
             graph.add(Box::new(source));
-            let output = translate_rtl(&mut graph, samples, 1_024_000, offset);
+            let output = translate_rtl(&mut graph, samples, 1_024_000, offset)?;
             let sink = VectorSink::new(output, 64);
             let captured = sink.hook();
             graph.add(Box::new(sink));
