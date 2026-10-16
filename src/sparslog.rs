@@ -8,9 +8,8 @@ use log::debug;
 
 use rustradio::block::{Block, BlockRet};
 use rustradio::blocks::{
-    AddConst, BinarySlicer, FftFilter, FileSource, IqStreamSink, Multiply, QuadratureDemod,
-    RationalResampler, RtlSdrDecode, RtlSdrSource, SignalSourceComplex, TcpSource, Tee,
-    ZeroCrossing,
+    AddConst, BinarySlicer, FftFilter, FileSource, IqStreamSink, QuadratureDemod,
+    RationalResampler, Rotator, RtlSdrDecode, RtlSdrSource, TcpSource, Tee, ZeroCrossing,
 };
 use rustradio::graph::GraphRunner;
 use rustradio::iq_stream::{IqServer, IqStreamStringSink};
@@ -534,12 +533,8 @@ fn translate_rtl(
         return Ok(samples);
     }
     // Tuning above the channel places it at -offset; mix it back to DC.
-    let (oscillator, oscillator_out) =
-        SignalSourceComplex::new(sample_rate as f32, offset as f32, 1.0)?;
-    graph.add(Box::new(oscillator));
-    // Multiply retains tags from its first input.
-    let (mixer, centered) = Multiply::new(samples, oscillator_out)?;
-    graph.add(Box::new(mixer));
+    let (rotator, centered) = Rotator::new(samples, sample_rate as f32, offset as f32)?;
+    graph.add(Box::new(rotator));
     Ok(centered)
 }
 
