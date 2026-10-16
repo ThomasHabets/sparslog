@@ -13,8 +13,8 @@ use rustradio::blocks::{
     ZeroCrossing,
 };
 use rustradio::graph::GraphRunner;
-use rustradio::iq_stream::IqServer;
-use rustradio::stream::ReadStream;
+use rustradio::iq_stream::{IqServer, IqStreamStringSink};
+use rustradio::stream::{NCWriteStream, ReadStream, new_nocopy_stream};
 use rustradio::window::WindowType;
 use rustradio::{Complex, Result, blockchain};
 
@@ -116,7 +116,7 @@ pub struct Opt {
     #[arg(long)]
     pub multithread: bool,
 
-    /// Serve filtered I/Q and demodulated samples on this IP:PORT.
+    /// Serve filtered I/Q, demodulated samples, and decoded strings on this IP:PORT.
     #[arg(long)]
     iq_listen: Option<SocketAddr>,
 
@@ -136,6 +136,7 @@ struct Decode {
     src: ReadStream<u8>,
     sensor_id: u32,
     output: String,
+    messages: Option<NCWriteStream<String>>,
 
     #[rustradio(default)]
     history: VecDeque<u8>,
@@ -346,6 +347,13 @@ impl Block for Decode {
                     .write_all(format!("{parsed}\n").as_bytes())
                     .map_err(|e| -> rustradio::Error { e.into() })?;
                 println!("{parsed}");
+                if let Some(messages) = &self.messages {
+                    if messages.remaining() > 0 {
+                        messages.push(parsed, &[]);
+                    } else {
+                        log::warn!("Decoded stream full; dropping viewer message");
+                    }
+                }
             }
         }
         self.history
@@ -535,6 +543,34 @@ fn translate_rtl(
     Ok(centered)
 }
 
+fn add_decoder(
+    graph: &mut (impl GraphRunner + ?Sized),
+    prev: ReadStream<u8>,
+    opt: &Opt,
+    server: Option<&IqServer>,
+) -> Result<()> {
+    let messages = if let Some(server) = server {
+        let (messages, input) = new_nocopy_stream();
+        graph.add(Box::new(
+            // Sparsnäs normally transmits one packet every 15 seconds.
+            IqStreamStringSink::builder(input, server, "decoded", 1.0 / 15.0)
+                .blocking(false)
+                .build()?,
+        ));
+        Some(messages)
+    } else {
+        None
+    };
+    let decode = Box::new(Decode::new(
+        prev,
+        opt.sensor_id,
+        opt.output.clone(),
+        messages,
+    ));
+    graph.add(decode);
+    Ok(())
+}
+
 /// Create the graph to decode sparsnäs, retaining the returned IQ listener
 /// until graph execution ends.
 ///
@@ -645,9 +681,7 @@ pub fn create_graph(
         BinarySlicer::new(prev)?,
     ];
 
-    // Decode.
-    let decode = Box::new(Decode::new(prev, opt.sensor_id, opt.output.clone()));
-    graph.add(decode);
+    add_decoder(graph, prev, opt, server.as_ref())?;
     server
         .zip(opt.iq_listen)
         .map(|(server, address)| IqListener::start(server, address, graph.cancel_token()))
@@ -659,6 +693,40 @@ mod tests {
     use super::*;
     use clap::Parser;
     use std::time::Duration;
+
+    #[test]
+    fn decoded_stream_matches_csv_record() -> anyhow::Result<()> {
+        use rustradio::blocks::VectorSource;
+        let packet = [
+            0xaa, 0xaa, 0xd2, 0x01, 0x11, 0xa1, 0x38, 0x07, 0x0e, 0xa2, 0xde, 0x29, 0xe6, 0x8b,
+            0x1a, 0xfd, 0x74, 0x47, 0xcf, 0xf2, 0x14, 0x80, 0x23, 0x7b,
+        ];
+        let mut bits: Vec<u8> = packet
+            .into_iter()
+            .flat_map(|byte| (0..8).rev().map(move |bit| (byte >> bit) & 1))
+            .collect();
+        bits.push(0);
+        let (mut source, input) = VectorSource::new(bits)?;
+        source.work()?;
+        let file = tempfile::NamedTempFile::new()?;
+        let (messages, output) = new_nocopy_stream();
+        let mut decoder = Decode::new(
+            input,
+            576_929,
+            file.path().to_str().unwrap().into(),
+            Some(messages),
+        );
+        decoder.work()?;
+        let (message, tags) = output.pop().expect("decoded message");
+        assert_eq!(
+            std::fs::read_to_string(file.path())?,
+            format!("{message}\n")
+        );
+        assert!(message.ends_with(",17592,330.560,20.674,100,OK"));
+        assert_eq!(tags, []);
+        assert!(output.pop().is_none());
+        Ok(())
+    }
 
     #[test]
     fn verbosity_flag_accepts_log_levels() -> anyhow::Result<()> {
