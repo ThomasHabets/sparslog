@@ -36,8 +36,8 @@ It'll print stuff, and log to `sparslog.csv`.
 For a live RTL-SDR dongle, `--freq` specifies the desired channel (default
 868 MHz). The dongle tunes 100 kHz above that channel, and samples are translated
 back to baseband before the low-pass filter to reject the hardware's DC spike.
-Frequency flags `--freq`, `--sample_rate`, and `--tune-offset` accept k/M/G
-suffixes and underscores, for example `--freq 868M --sample_rate 1.024M`.
+Frequency flags `--freq`, `--sample-rate`, and `--tune-offset` accept k/M/G
+suffixes and underscores, for example `--freq 868M --sample-rate 1.024M`.
 Use `--tune-offset HZ` to change this signed tuning offset, or
 `--tune-offset 0` for direct tuning. For example, `--tune-offset -100k` tunes
 100 kHz below the channel. The offset magnitude plus the filter's 60 kHz edge must fit
@@ -84,7 +84,7 @@ $ ./target/release/sparslog -s 123456 --iq-connect http://127.0.0.1:9000
 ```
 
 The default resource is `raw`. Use `--iq-source NAME` to select another complex
-resource. The advertised sample rate is used instead of `--sample_rate` and must
+resource. The advertised sample rate is used instead of `--sample-rate` and must
 be a positive whole number of Hz within the u32 range. IqStream input cannot be
 combined with `--read`, `--connect`, or `--rtlsdr`.
 

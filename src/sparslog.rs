@@ -104,7 +104,7 @@ pub struct Opt {
     gain: f32,
 
     /// File, TCP, or dongle sample rate (`IqStream` uses metadata); k/M/G supported.
-    #[arg(long = "sample_rate", default_value = "1.024M", value_parser = parse_frequency::<u32>)]
+    #[arg(long, default_value = "1.024M", value_parser = parse_frequency::<u32>)]
     sample_rate: u32,
 
     /// Desired channel frequency in Hz; accepts k/M/G suffixes.
@@ -801,7 +801,7 @@ mod tests {
                 "123456",
                 "--freq",
                 frequency,
-                "--sample_rate",
+                "--sample-rate",
                 rate,
                 "--tune-offset",
                 offset,
@@ -813,7 +813,7 @@ mod tests {
         let negative =
             Opt::try_parse_from(["sparslog", "--serial", "123456", "--tune-offset", "-100k"])?;
         assert_eq!(negative.tune_offset, -100_000);
-        for flag in ["--freq", "--sample_rate", "--tune-offset"] {
+        for flag in ["--freq", "--sample-rate", "--tune-offset"] {
             for invalid in ["invalid", "NaN", "inf", "0.1", "100Gk", "1e100"] {
                 assert!(
                     Opt::try_parse_from(["sparslog", "--serial", "123456", flag, invalid,])
@@ -823,8 +823,8 @@ mod tests {
         }
         for (flag, invalid) in [
             ("--freq", "-1k"),
-            ("--sample_rate", "-1k"),
-            ("--sample_rate", "4294967296"),
+            ("--sample-rate", "-1k"),
+            ("--sample-rate", "4294967296"),
             ("--freq", "18446744073709551616"),
             ("--tune-offset", "9223372036854775808"),
         ] {
