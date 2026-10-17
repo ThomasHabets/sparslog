@@ -51,7 +51,7 @@ The format is
 You can also provide `--prometheus` and `--where`, to send the measurements to a
 prometheus metric gateway.
 
-### Streaming filtered I/Q
+### Streaming I/Q
 
 Both `sparslog` and `sparslog-async` accept `--iq-listen IP:PORT`:
 
@@ -59,18 +59,55 @@ Both `sparslog` and `sparslog-async` accept `--iq-listen IP:PORT`:
 $ ./target/release/sparslog -s 123456 --rtlsdr --iq-listen 127.0.0.1:9000
 ```
 
+For a live RTL-SDR dongle, `raw` contains complex float32 samples immediately
+after `RtlSdrDecode`, before frequency translation or filtering, at the dongle's
+sample rate. It is not available for file, TCP, or IqStream inputs, including
+RTL-format files.
+
 The resource `filtered` contains complex float32 samples immediately after
 the rational resampler, before demodulation, at 200,000 Hz. The resource
 `demodulated` contains real float32 samples after demodulation and the
 `--offset` adjustment (`AddConst`), before `ZeroCrossing`, also at 200,000 Hz.
 `decoded` carries each decoded CSV record as a complete UTF-8 string, at a
-nominal rate of one message every 15 seconds. All three streams are nonblocking
+nominal rate of one message every 15 seconds. All streams are nonblocking
 and share the same listener. The listener serves gRPC and WebSocket
 (`ws://127.0.0.1:9000/iq/v1/stream`) on the same port.
 Clients must allow gaps: absent or slow clients do not stop decoding, and
 overflow is reported as gaps. Streaming is disabled unless the option is given.
 
-Building uses the published rustradio 0.19 crate with its `unstable` feature
+### Receiving an IqStream
+
+Both binaries can read complex samples from an IqStream gRPC server:
+
+```
+$ ./target/release/sparslog -s 123456 --iq-connect http://127.0.0.1:9000
+```
+
+The default resource is `raw`. Use `--iq-source NAME` to select another complex
+resource. The advertised sample rate is used instead of `--sample_rate` and must
+be a positive whole number of Hz within the u32 range. IqStream input cannot be
+combined with `--read`, `--connect`, or `--rtlsdr`.
+
+IqStream samples are translated using `--tune-offset` (default 100 kHz), matching
+the default live RTL-SDR tuning offset. Match this value to the sending dongle's
+offset. For an already centered resource, disable translation:
+
+```
+$ ./target/release/sparslog -s 123456 --iq-connect http://127.0.0.1:9000 \
+    --iq-source filtered --tune-offset 0
+```
+
+The offset magnitude plus the filter's 60 kHz edge must fit within half the
+advertised sample rate. Downloads allow gaps; dropped samples are not replayed
+and connections are not automatically retried. `--iq-listen` can also be used
+while receiving to serve the filtered, demodulated, and decoded results.
+
+For finite inputs with connected output clients, rustradio's multithreaded and
+async executors can end a sink before its completion handshake finishes. Use
+`sparslog` without `--multithread` for finite stream relays that need clean EOF.
+Fixing this completion behavior belongs in rustradio.
+
+Building uses the published rustradio 0.19.2 crate with its `unstable` feature
 enabled for IQ and string streaming.
 
 ### Browser stream viewer
