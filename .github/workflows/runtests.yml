@@ -27,6 +27,14 @@ jobs:
     - uses: dtolnay/rust-toolchain@stable
     - name: Rustup install wasm32
       run: rustup target add wasm32-unknown-unknown
+
+    - name: Install Rust nightly (needed for UI?)
+      run: rustup toolchain install nightly --profile minimal
+    - name: Rustup install nightly clippy
+      run: rustup component add --toolchain nightly clippy
+    - name: Rustup install wasm32
+      run: rustup target add wasm32-unknown-unknown
+
     - name: Identify toolchains
       id: toolchains
       run: |

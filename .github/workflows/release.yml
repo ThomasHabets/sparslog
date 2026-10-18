@@ -34,6 +34,13 @@ jobs:
       - name: Cargo install
         run: cargo install --locked tickbox cargo-semver-checks
 
+      - name: Install Rust nightly (needed for UI?)
+        run: rustup toolchain install nightly --profile minimal
+      - name: Rustup install nightly clippy
+        run: rustup component add --toolchain nightly clippy
+      - name: Rustup install wasm32
+        run: rustup target add wasm32-unknown-unknown
+
       - name: Install native dependencies
         run: |
           sudo apt-get update
