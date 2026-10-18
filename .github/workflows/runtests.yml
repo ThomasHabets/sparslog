@@ -1,0 +1,57 @@
+name: Run tests
+
+on:
+  push:
+    branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+  CARGO_PROFILE_DEV_DEBUG: "0"
+  CARGO_PROFILE_TEST_DEBUG: "0"
+
+jobs:
+  standard:
+    runs-on: ubuntu-latest
+    name: Standard tests
+    steps:
+    - uses: actions/checkout@v6
+    - uses: dtolnay/rust-toolchain@stable
+    - name: Rustup install wasm32
+      run: rustup target add wasm32-unknown-unknown
+    - name: Identify toolchains
+      id: toolchains
+      run: |
+        rustc --version > "$RUNNER_TEMP/toolchains"
+        if rustup toolchain list | grep -q '^nightly'; then
+          rustc +nightly --version >> "$RUNNER_TEMP/toolchains"
+        fi
+        echo "key=$(sha256sum "$RUNNER_TEMP/toolchains" | cut -d ' ' -f 1)" >> "$GITHUB_OUTPUT"
+    - uses: actions/cache@v6
+      with:
+        path: |
+          ~/.cargo/registry
+          ~/.cargo/git
+          ${{ runner.temp }}/check-tools
+          target
+        key: ${{ runner.os }}-${{ github.job }}-${{ steps.toolchains.outputs.key }}-${{ hashFiles('Cargo.lock', '.github/workflows/runtests.yml', 'tickbox/**') }}
+        restore-keys: |
+          ${{ runner.os }}-${{ github.job }}-${{ steps.toolchains.outputs.key }}-
+    - name: cargo install
+      run: |
+        echo "$RUNNER_TEMP/check-tools/bin" >> "$GITHUB_PATH"
+        cargo install --root "$RUNNER_TEMP/check-tools" --locked cargo-deny tickbox
+    - name: apt-get update
+      run:  sudo apt-get update
+    - name: Install dependencies
+      run:  sudo apt-get install -y librtlsdr-dev libsoapysdr-dev libjack-dev libasound-dev libfftw3-dev libpipewire-0.3-dev libvolk-dev libuhd-dev
+    - name: Run tickbox
+      run: NODIFF=true tickbox --dir tickbox/precommit --disable-tui --max-concurrency=1
