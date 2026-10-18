@@ -35,7 +35,7 @@ jobs:
     - name: Rustup install wasm32
       run: rustup target add wasm32-unknown-unknown
     - name: Moar rustup
-      run: rustup component add rust-src --toolchain nightly-x86_64-unknown-linux-gnu
+      run: rustup component add rust-src rustfmt --toolchain nightly-x86_64-unknown-linux-gnu
 
     - name: Identify toolchains
       id: toolchains
