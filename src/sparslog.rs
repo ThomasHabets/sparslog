@@ -59,8 +59,10 @@ static DECODES: LazyLock<prometheus::IntCounterVec> = LazyLock::new(|| {
 #[derive(clap::Parser, Debug)]
 #[command(version=concat!(
         env!("CARGO_PKG_VERSION"),
-        "\nCommit: ",
-        env!("GIT_VERSION"),
+        // This doesn't work for cargo install builds.
+        //"\nCommit: ",
+        //env!("GIT_VERSION"),
+        //
         // This makes the build non-reproducible.
         // "\nBuilt at: ",
         // env!("BUILD_TIMESTAMP"),

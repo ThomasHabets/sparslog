@@ -5,11 +5,12 @@ use rustradio::graph::GraphRunner;
 mod sparslog;
 
 fn main() -> Result<()> {
-    println!(
-        "Sparslog (sync) {} ({})",
-        sparslog::VERSION,
-        env!("GIT_VERSION")
-    );
+    let git_version = if env!("GIT_VERSION").is_empty() {
+        ""
+    } else {
+        &format!("({})", env!("GIT_VERSION"))
+    };
+    println!("Sparslog (sync) {} {git_version}", sparslog::VERSION);
     let opt = sparslog::Opt::parse();
     stderrlog::new()
         .module(module_path!())
