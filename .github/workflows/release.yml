@@ -32,7 +32,7 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
 
       - name: Cargo install
-        run: cargo install --locked tickbox cargo-semver-checks
+        run: cargo install --locked tickbox cargo-semver-checks wasm-pack
 
       - name: Install Rust nightly (needed for UI?)
         run: rustup toolchain install nightly --profile minimal

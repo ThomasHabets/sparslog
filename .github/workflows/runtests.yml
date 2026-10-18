@@ -58,7 +58,7 @@ jobs:
     - name: cargo install
       run: |
         echo "$RUNNER_TEMP/check-tools/bin" >> "$GITHUB_PATH"
-        cargo install --root "$RUNNER_TEMP/check-tools" --locked cargo-deny tickbox
+        cargo install --root "$RUNNER_TEMP/check-tools" --locked cargo-deny tickbox wasm-pack
     - name: apt-get update
       run:  sudo apt-get update
     - name: Install dependencies
