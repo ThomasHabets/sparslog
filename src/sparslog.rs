@@ -8,8 +8,8 @@ use log::debug;
 
 use rustradio::block::{Block, BlockRet};
 use rustradio::blocks::{
-    AddConst, BinarySlicer, FftFilter, FileSource, IqStreamSink, IqStreamSource, QuadratureDemod,
-    RationalResampler, Rotator, RtlSdrDecode, RtlSdrSource, TcpSource, Tee, ZeroCrossing,
+    AddConst, BinarySlicer, FftFilter, FileSource, IqStreamSource, QuadratureDemod,
+    RationalResampler, Rotator, RtlSdrDecode, RtlSdrSource, TcpSource, ZeroCrossing,
 };
 use rustradio::graph::GraphRunner;
 use rustradio::iq_stream::{IqServer, IqStreamStringSink, StreamOptions, proto};
@@ -481,26 +481,6 @@ impl Drop for IqListener {
     }
 }
 
-fn iq_tap<T: rustradio::iq_stream::IqSample>(
-    graph: &mut (impl GraphRunner + ?Sized),
-    input: ReadStream<T>,
-    server: Option<&IqServer>,
-    name: &str,
-    sample_rate: f64,
-) -> Result<ReadStream<T>> {
-    let Some(server) = server else {
-        return Ok(input);
-    };
-    let (tee, decoder, tapped) = Tee::new(input)?;
-    graph.add(Box::new(tee));
-    graph.add(Box::new(
-        IqStreamSink::builder(tapped, server, name, sample_rate)
-            .blocking(false)
-            .build()?,
-    ));
-    Ok(decoder)
-}
-
 // Keep the graph's integer-Hz interfaces while accepting rustradio's unit syntax.
 fn parse_frequency<T: num::NumCast>(text: &str) -> std::result::Result<T, String> {
     let hz = rustradio::parse_frequency(text)?;
@@ -548,9 +528,10 @@ fn live_rtl_samples(
     graph: &mut (impl GraphRunner + ?Sized),
     samples: ReadStream<Complex>,
     opt: &Opt,
-    server: Option<&IqServer>,
 ) -> Result<ReadStream<Complex>> {
-    let samples = iq_tap(graph, samples, server, "raw", f64::from(opt.sample_rate))?;
+    let samples = samples
+        .with_name("raw")
+        .with_sample_rate(f64::from(opt.sample_rate))?;
     translate_rtl(graph, samples, opt.sample_rate, opt.tune_offset)
 }
 
@@ -601,7 +582,6 @@ fn add_decoder(
 fn input_samples(
     graph: &mut (impl GraphRunner + ?Sized),
     opt: &Opt,
-    server: Option<&IqServer>,
 ) -> anyhow::Result<(ReadStream<Complex>, u32)> {
     let mut sample_rate = opt.sample_rate;
     // Source.
@@ -647,7 +627,7 @@ fn input_samples(
                 RtlSdrSource::new(frequency, opt.sample_rate, f32_to_i32(opt.gain)?)?,
                 RtlSdrDecode::new(prev)?,
             ];
-            live_rtl_samples(graph, samples, opt, server)?
+            live_rtl_samples(graph, samples, opt)?
         } else {
             return Err(anyhow::Error::msg(
                 "Need to provide either -r, -c, --rtlsdr, or --iq-connect",
@@ -685,15 +665,19 @@ pub fn create_graph(
             })
             .expect("spawn prometheus pusher thread");
     }
-    let server = opt.iq_listen.map(|_| IqServer::new());
-    let (src, sample_rate) = input_samples(graph, opt, server.as_ref())?;
+    let server = opt.iq_listen.map(|_| {
+        let s = IqServer::new();
+        s.register_named_streams();
+        s
+    });
+
+    let (prev, sample_rate) = input_samples(graph, opt)?;
 
     #[allow(clippy::cast_precision_loss)]
     let samp_rate = sample_rate as f32;
     let samp_rate_2 = 200_000.0;
     let baud = 38383.5;
 
-    let prev = src;
     // Resample.
     let prev = blockchain![
         graph,
@@ -705,33 +689,21 @@ pub fn create_graph(
             rustradio::fir::low_pass_complex(samp_rate, 50000.0, 10000.0, &WindowType::Hamming)?
         )?,
         RationalResampler::new(prev, f32_to_usize(samp_rate_2)?, f32_to_usize(samp_rate)?)?,
-    ];
-    let prev = iq_tap(
-        graph,
-        prev,
-        server.as_ref(),
-        "filtered",
-        f64::from(samp_rate_2),
-    )?;
-    let prev = blockchain![
-        graph,
-        prev,
-        QuadratureDemod::new(prev, 1.0)?,
+        QuadratureDemod::new(
+            prev.with_name("filtered").with_sample_rate(samp_rate_2)?,
+            1.0
+        )?,
         AddConst::new(prev, opt.offset)?,
-    ];
-    let prev = iq_tap(
-        graph,
-        prev,
-        server.as_ref(),
-        "demodulated",
-        f64::from(samp_rate_2),
-    )?;
-    let prev = blockchain![
-        graph,
-        prev,
-        ZeroCrossing::new(prev, samp_rate_2 / baud, 0.1)?,
-        BinarySlicer::new(prev)?,
-    ];
+        ZeroCrossing::new(
+            prev.with_name("demodulated")
+                .with_sample_rate(samp_rate_2)?,
+            samp_rate_2 / baud,
+            0.1
+        )?,
+        BinarySlicer::new(prev.with_name("soft-bits").with_sample_rate(baud)?)?,
+    ]
+    .with_name("bits")
+    .with_sample_rate(baud)?;
 
     add_decoder(graph, prev, opt, server.as_ref())?;
     server
@@ -1081,7 +1053,7 @@ mod tests {
                     2 => &mut async_graph,
                     _ => &mut sync_graph,
                 };
-                let (input, sample_rate) = input_samples(graph, &opt, None)?;
+                let (input, sample_rate) = input_samples(graph, &opt)?;
                 assert_eq!(sample_rate, 400_000);
                 let sink = VectorSink::new(input, 8192);
                 let captured = sink.hook();

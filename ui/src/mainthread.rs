@@ -170,7 +170,7 @@ fn mount_time(sample_rate: f64) -> Result<(), JsValue> {
     )
     .map_err(|e| JsValue::from_str(&e.to_string()))?;
     sink.set_trigger(Some(TimeSinkTrigger {
-        level: 0.0,
+        level: 0.1,
         edge: TriggerEdge::Rising,
     }))
     .map_err(|e| JsValue::from_str(&e.to_string()))?;
