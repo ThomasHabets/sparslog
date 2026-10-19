@@ -1,7 +1,9 @@
 use std::cell::{OnceCell, RefCell};
 
 use rustradio_ui::mainthread::spectrum_sink::{WaterfallSink, WaterfallSinkOptions};
-use rustradio_ui::mainthread::time_sink::{TimeSink, TimeSinkOptions};
+use rustradio_ui::mainthread::time_sink::{
+    TimeSink, TimeSinkOptions, TimeSinkTrigger, TriggerEdge,
+};
 use rustradio_ui::mainthread::{get_button, get_element, get_input, send_message};
 use wasm_bindgen::prelude::*;
 use wasm_bindgen_futures::spawn_local;
@@ -166,6 +168,11 @@ fn mount_time(sample_rate: f64) -> Result<(), JsValue> {
             ..Default::default()
         },
     )
+    .map_err(|e| JsValue::from_str(&e.to_string()))?;
+    sink.set_trigger(Some(TimeSinkTrigger {
+        level: 0.0,
+        edge: TriggerEdge::Rising,
+    }))
     .map_err(|e| JsValue::from_str(&e.to_string()))?;
     sink.set_trigger_delay(std::time::Duration::from_millis(1))
         .map_err(|e| JsValue::from_str(&e.to_string()))?;
