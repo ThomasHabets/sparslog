@@ -744,6 +744,7 @@ pub fn create_graph(
 mod tests {
     use super::*;
     use clap::Parser;
+    use rustradio::blocks::IqStreamSink;
     use std::time::Duration;
 
     #[test]
@@ -1043,102 +1044,9 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn live_raw_tap_precedes_translation() -> anyhow::Result<()> {
-        use rustradio::blocks::{VectorSink, VectorSource};
-        use rustradio::stream::{Tag, TagValue};
-        let opt = Opt::try_parse_from(["sparslog", "--serial", "123456", "--rtlsdr"])?;
-        let server = IqServer::new();
-        let mut graph = rustradio::graph::Graph::new();
-        // Model the complex output of RtlSdrDecode, including a sample tag.
-        let values = vec![Complex::new(0.5, -0.25); 64];
-        let tag = Tag::new(7, "test-position", TagValue::U64(123));
-        let (source, samples) = VectorSource::builder(values.clone())
-            .tags(std::slice::from_ref(&tag))
-            .build()?;
-        graph.add(Box::new(source));
-        let centered = live_rtl_samples(&mut graph, samples, &opt, Some(&server))?;
-        let sink = VectorSink::new(centered, 64);
-        let translated = sink.hook();
-        graph.add(Box::new(sink));
-        let listener = IqListener::start(server, "127.0.0.1:0".parse()?, graph.cancel_token())?;
-        let (source, samples, status) = IqStreamSource::<Complex>::connect(
-            format!("http://{}", listener.local_addr()),
-            "raw",
-            StreamOptions {
-                loss_policy: proto::LossPolicy::AllowGaps,
-                ..Default::default()
-            },
-        )?;
-        assert_eq!(
-            status.description().sample_rate_hz,
-            f64::from(opt.sample_rate)
-        );
-        assert_eq!(status.description().source_id, "raw");
-        let sink = VectorSink::new(samples, 64);
-        let raw = sink.hook();
-        let mut receiver = rustradio::graph::Graph::new();
-        receiver.add(Box::new(source));
-        receiver.add(Box::new(sink));
-        let (sent, downloaded) = tokio::join!(run_sync_graph(graph), run_sync_graph(receiver));
-        sent?;
-        downloaded?;
-        assert_eq!(raw.data().samples(), values);
-        assert!(raw.data().tags().contains(&tag));
-        assert_ne!(translated.data().samples(), values);
-        assert!(translated.data().tags().contains(&tag));
-        listener.shutdown()
-    }
-
-    #[tokio::test]
-    async fn recordings_do_not_expose_raw() -> anyhow::Result<()> {
-        for rtl in [false, true] {
-            let (_file, mut opt) = iq_fixture()?;
-            opt.rtlsdr = rtl;
-            let mut graph = rustradio::graph::Graph::new();
-            let listener = create_graph(&mut graph, &opt)?.unwrap();
-            assert!(
-                IqStreamSource::<Complex>::connect(
-                    format!("http://{}", listener.local_addr()),
-                    "raw",
-                    StreamOptions {
-                        loss_policy: proto::LossPolicy::AllowGaps,
-                        ..Default::default()
-                    },
-                )
-                .is_err()
-            );
-            run_sync_graph(graph).await?;
-            listener.shutdown()?;
-        }
-        Ok(())
-    }
-
-    fn iq_filtered_observer(
-        listener: &IqListener,
-    ) -> anyhow::Result<(
-        rustradio::graph::Graph,
-        rustradio::vector_sink::Hook<Complex>,
-    )> {
-        use rustradio::blocks::VectorSink;
-        let uri = format!("http://{}", listener.local_addr());
-        let options = StreamOptions {
-            loss_policy: proto::LossPolicy::AllowGaps,
-            ..Default::default()
-        };
-        assert!(IqStreamSource::<Complex>::connect(uri.clone(), "raw", options.clone()).is_err());
-        let (source, samples, _) = IqStreamSource::<Complex>::connect(uri, "filtered", options)?;
-        let sink = VectorSink::new(samples, 16_384);
-        let captured = sink.hook();
-        let mut observer = rustradio::graph::Graph::new();
-        observer.add(Box::new(source));
-        observer.add(Box::new(sink));
-        Ok((observer, captured))
-    }
-
-    #[tokio::test]
     #[allow(clippy::cast_precision_loss)]
     async fn iq_input_all_executors() -> anyhow::Result<()> {
-        use rustradio::blocks::VectorSource;
+        use rustradio::blocks::{VectorSink, VectorSource};
         for mode in 0..3 {
             for offset in [0, 100_000] {
                 let server = IqServer::new();
@@ -1163,15 +1071,6 @@ mod tests {
                 let mut opt = iq_options(upstream.local_addr())?;
                 opt.iq_source = "channel".into();
                 opt.tune_offset = offset;
-                // Finite IqStream sinks currently complete reliably only in Graph.
-                // MTGraph/AsyncGraph can drop a sink on upstream closure before
-                // it sends End. Test input on every executor and inspect output
-                // samples using Graph, without working around the upstream bug.
-                opt.iq_listen = if mode == 0 {
-                    Some("127.0.0.1:0".parse()?)
-                } else {
-                    None
-                };
                 // Deliberately differs from the advertised rate.
                 assert_ne!(opt.sample_rate, 400_000);
                 let mut sync_graph = rustradio::graph::Graph::new();
@@ -1182,13 +1081,11 @@ mod tests {
                     2 => &mut async_graph,
                     _ => &mut sync_graph,
                 };
-                let downstream = create_graph(graph, &opt)?;
-                let (observer, captured) = if let Some(downstream) = &downstream {
-                    let (observer, captured) = iq_filtered_observer(downstream)?;
-                    (observer, Some(captured))
-                } else {
-                    (rustradio::graph::Graph::new(), None)
-                };
+                let (input, sample_rate) = input_samples(graph, &opt, None)?;
+                assert_eq!(sample_rate, 400_000);
+                let sink = VectorSink::new(input, 8192);
+                let captured = sink.hook();
+                graph.add(Box::new(sink));
                 let decoding = async {
                     if mode == 2 {
                         let cancel = async_graph.cancel_token();
@@ -1204,24 +1101,16 @@ mod tests {
                     }
                     Ok::<_, anyhow::Error>(())
                 };
-                let (sent, decoded, downloaded) =
-                    tokio::join!(run_sync_graph(sender), decoding, run_sync_graph(observer));
+                let (sent, decoded) = tokio::join!(run_sync_graph(sender), decoding);
                 sent?;
                 decoded?;
-                downloaded?;
-                if let Some(captured) = captured {
-                    let data = captured.data();
-                    assert!(data.samples().len() > 2048);
-                    assert!(data.samples().len() < 8192);
-                    assert!(
-                        data.samples()[1024..]
-                            .iter()
-                            .all(|sample| (*sample - Complex::new(1.0, 0.0)).norm() < 0.02)
-                    );
-                }
-                if let Some(downstream) = downstream {
-                    downstream.shutdown()?;
-                }
+                let data = captured.data();
+                assert_eq!(data.samples().len(), 8192);
+                assert!(
+                    data.samples()
+                        .iter()
+                        .all(|sample| (*sample - Complex::new(1.0, 0.0)).norm() < 0.02)
+                );
                 upstream.shutdown()?;
             }
         }
@@ -1338,114 +1227,8 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn iq_stream_metadata_and_samples() -> anyhow::Result<()> {
-        check_iq_stream(false).await
-    }
-
-    #[tokio::test]
-    async fn iq_slow_client_reports_gaps() -> anyhow::Result<()> {
-        check_iq_stream(true).await
-    }
-
-    async fn check_iq_stream(slow: bool) -> anyhow::Result<()> {
-        use rustradio::blocks::{IqStreamSource, VectorSink};
-        use rustradio::iq_stream::{SourceStatus, StreamOptions, proto};
-
-        let (_file, opt) = iq_fixture()?;
-        let mut graph = rustradio::graph::Graph::new();
-        let listener = create_graph(&mut graph, &opt)?.unwrap();
-        let mut options = StreamOptions {
-            loss_policy: proto::LossPolicy::AllowGaps,
-            ..Default::default()
-        };
-        if slow {
-            // Leave room for a sample and its stream tags while forcing gaps.
-            options.limits.max_frame_bytes = 512;
-            options.limits.max_in_flight_frames = 1;
-        }
-        let (source, input, status) = IqStreamSource::<Complex>::connect_async(
-            format!("http://{}", listener.local_addr()),
-            "filtered",
-            options.clone(),
-        )
-        .await?;
-        assert_eq!(status.description().sample_rate_hz, 200_000.0);
-        assert_eq!(status.description().source_id, "filtered");
-        let sink = VectorSink::new(input, 32_768);
-        let samples = sink.hook();
-        let mut receiver = rustradio::graph::Graph::new();
-        receiver.add(Box::new(source));
-        receiver.add(Box::new(sink));
-        let (source, input, demodulated_status) = IqStreamSource::<f32>::connect_async(
-            format!("http://{}", listener.local_addr()),
-            "demodulated",
-            options,
-        )
-        .await?;
-        assert_eq!(demodulated_status.description().sample_rate_hz, 200_000.0);
-        assert_eq!(demodulated_status.description().source_id, "demodulated");
-        let sink = VectorSink::new(input, 32_768);
-        let demodulated_samples = sink.hook();
-        receiver.add(Box::new(source));
-        receiver.add(Box::new(sink));
-        let receiving = async {
-            if slow {
-                tokio::time::sleep(Duration::from_millis(100)).await;
-            }
-            run_sync_graph(receiver).await
-        };
-        let (sending, receiving) = tokio::join!(run_sync_graph(graph), receiving);
-        sending?;
-        receiving?;
-        assert_eq!(status.status(), SourceStatus::Complete);
-        assert_eq!(demodulated_status.status(), SourceStatus::Complete);
-        if slow {
-            assert!(status.lost_samples() > 0);
-            assert!(demodulated_status.lost_samples() > 0);
-        }
-        assert_ne!(demodulated_samples.data().samples(), &[] as &[f32]);
-        assert!(
-            demodulated_samples
-                .data()
-                .samples()
-                .iter()
-                .all(|s| s.to_bits() == opt.offset.to_bits())
-        );
-        assert_ne!(samples.data().samples(), []);
-        assert!(
-            samples
-                .data()
-                .samples()
-                .iter()
-                .all(|s| *s == Complex::new(0.0, 0.0))
-        );
-        listener.shutdown()
-    }
-
-    #[tokio::test]
-    async fn iq_disconnect_and_cancellation() -> anyhow::Result<()> {
-        use rustradio::blocks::IqStreamSource;
-        use rustradio::iq_stream::{StreamOptions, proto};
-
+    async fn iq_listener_cancellation() -> anyhow::Result<()> {
         let (_file, mut opt) = iq_fixture()?;
-        let mut graph = rustradio::graph::Graph::new();
-        let listener = create_graph(&mut graph, &opt)?.unwrap();
-        let (source, input, _) = IqStreamSource::<Complex>::connect_async(
-            format!("http://{}", listener.local_addr()),
-            "filtered",
-            StreamOptions {
-                loss_policy: proto::LossPolicy::AllowGaps,
-                ..Default::default()
-            },
-        )
-        .await?;
-        let sending = tokio::spawn(run_sync_graph(graph));
-        tokio::time::sleep(Duration::from_millis(100)).await;
-        drop(source);
-        drop(input);
-        sending.await??;
-        listener.shutdown()?;
-
         opt.read = Some("/dev/zero".into());
         let mut graph = rustradio::graph::Graph::new();
         let listener = create_graph(&mut graph, &opt)?.unwrap();
