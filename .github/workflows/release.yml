@@ -16,7 +16,30 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  check-ci:
+    runs-on: ubuntu-latest
+    permissions:
+      actions: read
+    steps:
+      - name: Require successful CI
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SHA: ${{ github.sha }}
+        run: |
+          count=$(gh run list \
+            --repo "$GITHUB_REPOSITORY" \
+            --workflow runtests.yml \
+            --commit "$SHA" \
+            --status success \
+            --json databaseId \
+            --jq 'length')
+
+          if [ "$count" -eq 0 ]; then
+            echo "::error::No successful CI run for $SHA"
+            exit 1
+          fi
   release:
+    needs: check-ci
     runs-on: ubuntu-latest
 
     steps:
