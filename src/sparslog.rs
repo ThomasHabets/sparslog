@@ -4,12 +4,12 @@ use std::io::Write;
 use std::net::SocketAddr;
 
 use anyhow::anyhow;
-use log::debug;
+use log::{debug, info};
 
 use rustradio::block::{Block, BlockRet};
 use rustradio::blocks::{
-    AddConst, BinarySlicer, FftFilter, FileSource, IqStreamSource, QuadratureDemod,
-    RationalResampler, Rotator, RtlSdrDecode, RtlSdrSource, TcpSource, ZeroCrossing,
+    AddConst, BinarySlicer, FftFilter, FileSource, FirFilter, IqStreamSource, QuadratureDemod,
+    Rotator, RtlSdrDecode, RtlSdrSource, TcpSource, ZeroCrossing,
 };
 use rustradio::graph::GraphRunner;
 use rustradio::iq_stream::{IqServer, IqStreamStringSink, StreamOptions, proto};
@@ -167,18 +167,6 @@ fn f32_to_i32(value: f32) -> anyhow::Result<i32> {
         Ok(value as i32)
     } else {
         Err(anyhow!("invalid conversion from {value} to i32"))
-    }
-}
-
-#[allow(clippy::cast_precision_loss)]
-fn f32_to_usize(value: f32) -> anyhow::Result<usize> {
-    let value = f64::from(value);
-    if value.is_finite() && value >= 0.0 && value <= usize::MAX as f64 {
-        #[allow(clippy::cast_possible_truncation)]
-        #[allow(clippy::cast_sign_loss)]
-        Ok(value as usize)
-    } else {
-        Err(anyhow!("invalid conversion from {value} to usize"))
     }
 }
 
@@ -673,22 +661,38 @@ pub fn create_graph(
 
     let (prev, sample_rate) = input_samples(graph, opt)?;
 
+    // Our goal post decimation is to end up at about 200ksps.
+    let fir_decimation: usize = (sample_rate as usize) / 200_000;
+
     #[allow(clippy::cast_precision_loss)]
     let samp_rate = sample_rate as f32;
-    let samp_rate_2 = 200_000.0;
+    #[allow(clippy::cast_precision_loss)]
+    let samp_rate_2 = samp_rate / (fir_decimation as f32);
     let baud = 38383.5;
 
+    let fir_taps = rustradio::fir::low_pass_complex(
+        samp_rate,
+        samp_rate_2 / 4.0,
+        75_000.0,
+        WindowType::Hamming,
+    )?;
+    info!("Initial FIR filter tap count: {}", fir_taps.len());
     // Resample.
     let prev = blockchain![
         graph,
         prev,
-        // TODO: doing filtering in multiple steps, with a decimating FIR filter, would
-        // probably be more CPU efficient.
+        FirFilter::builder(fir_taps)
+            .deci(fir_decimation)
+            .build(prev)?,
         FftFilter::new(
             prev,
-            rustradio::fir::low_pass_complex(samp_rate, 50000.0, 10000.0, &WindowType::Hamming)?
+            rustradio::fir::low_pass_complex(
+                samp_rate_2,
+                50_000.0,
+                10_000.0,
+                &WindowType::Hamming
+            )?,
         )?,
-        RationalResampler::new(prev, f32_to_usize(samp_rate_2)?, f32_to_usize(samp_rate)?)?,
         QuadratureDemod::new(
             prev.with_name("filtered").with_sample_rate(samp_rate_2)?,
             1.0
@@ -1227,28 +1231,6 @@ mod tests {
             (1.9, 1),
         ] {
             assert_eq!(f32_to_i32(i)?, o);
-        }
-        Ok(())
-    }
-
-    #[test]
-    fn convert_usize() -> anyhow::Result<()> {
-        for (i, o) in [
-            (0.0, Some(0)),
-            (-1.0, None),
-            (-1.1, None),
-            (1.0, Some(1)),
-            (1.1, Some(1)),
-            (1.9, Some(1)),
-        ] {
-            match o {
-                None => {
-                    assert!(f32_to_usize(i).is_err());
-                }
-                Some(v) => {
-                    assert_eq!(f32_to_usize(i)?, v);
-                }
-            }
         }
         Ok(())
     }
