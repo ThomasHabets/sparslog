@@ -2029,6 +2029,8 @@ dependencies = [
  "tokio-stream",
  "tonic 0.14.9",
  "volk",
+ "wasm-bindgen",
+ "web-sys",
 ]
 
 [[package]]

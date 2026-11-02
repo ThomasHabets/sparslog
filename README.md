@@ -157,6 +157,42 @@ $ RUSTFLAGS="--cfg tokio_unstable" cargo build \
     --release
 ```
 
+## Using the receiver as a library
+
+`add_receiver(graph, samples, &ReceiverConfig)` adds the shared DSP chain and
+packet decoder to a caller-provided rustradio graph. The input is a
+`ReadStream<Complex>`; the result is an `NCReadStream<Measurement>` that your
+application must consume. `ReceiverConfig::new(sensor_id, sample_rate)` assumes
+centered samples and uses the CLI's default FSK offset. Set `tune_offset` when
+the capture frequency differs from the desired channel, and `fsk_offset` to
+adjust the demodulated signal. Input rates must be at least 200 kHz.
+
+`Measurement` contains the sequence number, watts, cumulative watt-hours,
+battery status, sensor serial, and CRC validity after single-bit correction.
+Invalid-CRC packets are reported too. `measurement.to_csv(unix_seconds)`
+formats the existing CSV record with a timestamp supplied by the application.
+For applications that already have sliced bits, `Decoder::new(bits, sensor_id)`
+exposes the packet decoder directly.
+
+The shared receiver does not open capture devices, write files, read a clock,
+or update metrics. Native CLI capture, CSV logging, Prometheus, and IQ serving
+live in `sparslog::cli` and use the same receiver. The default `cli` feature
+preserves normal command-line builds and the existing root-level CLI exports.
+
+For a browser application, disable default features:
+
+```toml
+sparslog = { path = "../sparslog", default-features = false }
+```
+
+Building for `wasm32` enables rustradio's WASM support automatically. The application
+still supplies browser capture, a measurement consumer, and graph execution;
+this does not add browser capture to the existing stream viewer. Use rustradio
+0.20 for compatible graph and stream types.
+
+Presubmits test the library without CLI dependencies and check the
+`wasm32-unknown-unknown` build.
+
 ## Bonus feature: A GNURadio implementation
 
 There's also a GNURadio implementation in the `gr/` directory.

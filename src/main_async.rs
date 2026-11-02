@@ -2,8 +2,6 @@ use anyhow::Result;
 use clap::Parser;
 use rustradio::graph::GraphRunner;
 
-mod sparslog;
-
 #[tokio::main]
 async fn main() -> Result<()> {
     let git_version = if env!("GIT_VERSION").is_empty() {
@@ -18,7 +16,7 @@ async fn main() -> Result<()> {
 
     let opt = sparslog::Opt::parse();
     stderrlog::new()
-        .module(module_path!())
+        .module("sparslog")
         .module("rustradio")
         .quiet(false)
         .verbosity(opt.verbose)

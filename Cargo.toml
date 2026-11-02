@@ -13,35 +13,43 @@ keywords = ["SDR", "ikea"]
 
 [dependencies]
 anyhow = "1"
-ctrlc = "3"
+ctrlc = { version = "3", optional = true }
 log = "0.4"
 num = "0.4"
-# `unstable` to enable IQ streaming to a UI.
-rustradio = {version="0.20.0", features=["rtlsdr", "fast-math", "async", "unstable"]}
-stderrlog = "0.6"
-clap = {version = "4", features = ["derive"]}
-console-subscriber = "0.4.1"
-tokio = "1.45.0"
-prometheus = { version = "0.14.0", features = ["process", "push"] }
+rustradio = { version = "0.20.0", features = ["fast-math"] }
+stderrlog = { version = "0.6", optional = true }
+clap = { version = "4", features = ["derive"], optional = true }
+console-subscriber = { version = "0.4.1", optional = true }
+tokio = { version = "1.45.0", optional = true }
+prometheus = { version = "0.14.0", features = ["process", "push"], optional = true }
+
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+rustradio = { version = "0.20.0", features = ["wasm"] }
 
 [dev-dependencies]
 tempfile = "3"
 
 [features]
-default = []
+default = ["cli"]
+cli = [
+    "dep:ctrlc", "dep:stderrlog", "dep:clap", "dep:tokio", "dep:prometheus",
+    "rustradio/rtlsdr", "rustradio/async", "rustradio/unstable",
+]
 volk = ["rustradio/volk"]
-tokio-unstable = ["tokio/tracing", "rustradio/tokio-unstable"]
+tokio-unstable = ["cli", "dep:console-subscriber", "tokio/tracing", "rustradio/tokio-unstable"]
 
 [[bin]]
 name = "sparslog"
 path = "src/main.rs"
+required-features = ["cli"]
 
 [[bin]]
 name = "sparslog-async"
 path = "src/main_async.rs"
+required-features = ["cli"]
 
 [lib]
-path = "src/sparslog.rs"
+path = "src/lib.rs"
 
 [patch.crates-io]
 #rustradio = { path = "../rustradio" }

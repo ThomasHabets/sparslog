@@ -1,25 +1,20 @@
+//! Native input, command-line options, CSV output, metrics, and IQ serving.
 #![allow(clippy::missing_panics_doc)]
-use std::collections::VecDeque;
 use std::io::Write;
 use std::net::SocketAddr;
-
-use anyhow::anyhow;
-use log::{debug, info};
-
-use rustradio::block::{Block, BlockRet};
-use rustradio::blocks::{
-    AddConst, BinarySlicer, FftFilter, FileSource, FirFilter, IqStreamSource, QuadratureDemod,
-    Rotator, RtlSdrDecode, RtlSdrSource, TcpSource, ZeroCrossing,
-};
-use rustradio::graph::GraphRunner;
-use rustradio::iq_stream::{IqServer, IqStreamStringSink, StreamOptions, proto};
-use rustradio::stream::{NCWriteStream, ReadStream, new_nocopy_stream};
-use rustradio::window::WindowType;
-use rustradio::{Complex, Result, blockchain};
-
 use std::sync::LazyLock;
 
-pub const VERSION: &str = env!("CARGO_PKG_VERSION");
+use anyhow::anyhow;
+use log::debug;
+use rustradio::block::{Block, BlockRet};
+use rustradio::blocks::{FileSource, IqStreamSource, RtlSdrDecode, RtlSdrSource, TcpSource};
+use rustradio::graph::GraphRunner;
+use rustradio::iq_stream::{IqServer, IqStreamStringSink, StreamOptions, proto};
+use rustradio::stream::{NCReadStream, NCWriteStream, ReadStream, new_nocopy_stream};
+use rustradio::{Complex, Result, blockchain};
+
+use crate::receiver::{translate_rtl, validate_tune_offset};
+use crate::{Measurement, ReceiverConfig, add_receiver};
 
 static REGISTRY: LazyLock<prometheus::Registry> = LazyLock::new(prometheus::Registry::new);
 
@@ -139,26 +134,6 @@ pub struct Opt {
     where_: Option<String>,
 }
 
-#[derive(rustradio::rustradio_macros::Block)]
-#[rustradio(new, custom_name)]
-struct Decode {
-    #[rustradio(in)]
-    src: ReadStream<u8>,
-    sensor_id: u32,
-    output: String,
-    messages: Option<NCWriteStream<String>>,
-
-    #[rustradio(default)]
-    history: VecDeque<u8>,
-}
-
-impl Decode {
-    fn custom_name(&self) -> &'static str {
-        let _ = self;
-        "Sparsnäs decoder"
-    }
-}
-
 #[allow(clippy::cast_precision_loss)]
 fn f32_to_i32(value: f32) -> anyhow::Result<i32> {
     let value = f64::from(value);
@@ -167,196 +142,6 @@ fn f32_to_i32(value: f32) -> anyhow::Result<i32> {
         Ok(value as i32)
     } else {
         Err(anyhow!("invalid conversion from {value} to i32"))
-    }
-}
-
-fn bits2byte(data: &[u8]) -> u8 {
-    assert_eq!(data.len(), 8);
-    (data[0] << 7)
-        | (data[1] << 6)
-        | (data[2] << 5)
-        | (data[3] << 4)
-        | (data[4] << 3)
-        | (data[5] << 2)
-        | (data[6] << 1)
-        | data[7]
-}
-fn calc_crc(mut s: u8, mut reg: u16) -> u16 {
-    let poly: u16 = 0x8005;
-    for _i in 0..8 {
-        let regbit = reg & 0x8000 != 0;
-        let databit = s & 0x80 != 0;
-        if regbit ^ databit {
-            reg = (reg << 1) ^ poly;
-        } else {
-            reg <<= 1;
-        }
-        s <<= 1;
-    }
-    reg
-}
-
-fn crc16(input: &[u8], expected: u16) -> bool {
-    let mut checksum = 0xffffu16;
-    for i in input {
-        checksum = calc_crc(*i, checksum);
-    }
-    //eprintln!("Got checksum {:04x}, want {:04x}", checksum, expected);
-    checksum == expected
-}
-
-// packet: from length to and including the CRC.
-fn fix_packet(packet: &[u8]) -> Vec<u8> {
-    let crc = (u16::from(packet[packet.len() - 2]) << 8) | u16::from(packet[packet.len() - 1]);
-    if crc16(&packet[..packet.len() - 2], crc) {
-        return packet.to_vec();
-    }
-    for i in 0..(packet.len() * 8) {
-        let mut test = packet.to_vec();
-        let bit = 1 << (i % 8);
-        test[i / 8] ^= bit;
-        if crc16(&test[..packet.len() - 2], crc) {
-            return test.clone();
-        }
-    }
-    packet.to_vec()
-}
-
-fn parsepacket(packet: &[u8], sensor_id: u32) -> String {
-    assert_eq!(packet.len(), 20);
-    //let sensor = packet[0];
-    //let app = packet[1];
-    let packet = fix_packet(packet);
-
-    // This is the correct packet.
-    println!("Packet: {packet:02x?}");
-
-    let sensor_id_sub = {
-        let magic = 0x5D38_E8CB;
-        if sensor_id >= magic {
-            sensor_id - magic
-        } else {
-            4_294_967_295 - (magic - sensor_id - 1)
-        }
-    };
-    let enc_key = [
-        ((sensor_id_sub >> 24) & 0xff) as u8,
-        (sensor_id_sub & 0xff) as u8,
-        ((sensor_id_sub >> 8) & 0xff) as u8,
-        0x47u8,
-        ((sensor_id_sub >> 16) & 0xff) as u8,
-    ];
-    let mut dec = Vec::new();
-    for i in 0..13 {
-        dec.push(packet[i + 5] ^ enc_key[i % 5]);
-    }
-    //println!("Decoded: {:02x?}", dec);
-    //let mut prep = vec![0x11];
-    //prep.extend(&packet[..packet.len()-2]);
-    let crc = (u16::from(packet[packet.len() - 2]) << 8) | u16::from(packet[packet.len() - 1]);
-    let crc_ok = crc16(&packet[..packet.len() - 2], crc);
-
-    let seq = (u16::from(dec[4]) << 8) | u16::from(dec[5]);
-    let effect = (u16::from(dec[6]) << 8) | u16::from(dec[7]);
-    let wh = (u32::from(dec[8]) << 24)
-        | (u32::from(dec[9]) << 16)
-        | (u32::from(dec[10]) << 8)
-        | u32::from(dec[11]);
-    let kwh = format!("{}.{:03}", wh / 1000, wh % 1000);
-    let battery = dec[12];
-
-    let watt = 3600.0 * 1024.0 / f32::from(effect);
-
-    let now = std::time::SystemTime::now()
-        .duration_since(std::time::SystemTime::UNIX_EPOCH)
-        .expect("Time went backwards")
-        .as_secs();
-
-    if crc_ok {
-        WATTS.set(watt.into());
-        BATTERY.set(battery.into());
-        if let Ok(v) = kwh.parse() {
-            let old = KWH.get();
-            if old > v {
-                KWH.reset();
-                KWH.inc_by(v);
-            } else {
-                KWH.inc_by(v - old);
-            }
-        }
-    }
-    let status = if crc_ok { "OK" } else { "BAD" };
-    DECODES.with_label_values(&[status]).inc();
-    format!("{now},{seq},{watt:.3},{kwh},{battery},{status}")
-}
-
-impl Block for Decode {
-    fn work(&mut self) -> Result<BlockRet<'_>> {
-        let cac = [
-            1u8, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 1, 0, 1, 0, 0, 1, 0, 0, 0, 0, 0,
-            0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 1,
-        ];
-        let (input, _) = self.src.read_buf()?;
-        if input.is_empty() {
-            return Ok(BlockRet::WaitForStream(&self.src, 1));
-        }
-        //eprintln!("Decode got {}", input.available());
-        self.history.extend(input.iter());
-        {
-            let n = input.len();
-            input.consume(n);
-        }
-
-        let packet_bits_len = cac.len() + 19 * 8;
-        //let cac = vec![1,0,1,0,1,0,1,0,1,0,1];
-        let n = self.history.len();
-        //println!("Called with {n}");
-        if n < packet_bits_len {
-            //debug!("{} < {} len, sleeping", n, cac.len());
-            return Ok(BlockRet::WaitForStream(&self.src, packet_bits_len - n));
-        }
-        //println!("Running on data size {n}");
-        let input = &self.history;
-        for i in 0..(n - packet_bits_len) {
-            let equal = cac
-                .iter()
-                .zip(input.range(i..(i + cac.len())))
-                .all(|(a, b)| a == b);
-            //if &cac == input.range(i..(i + cac.len())) {
-            if equal {
-                debug!("Found CAC");
-                let bits = &input
-                    .range(i..(i + cac.len() + 19 * 8))
-                    .copied()
-                    .collect::<Vec<u8>>();
-                let mut bytes = Vec::new();
-                for j in (0..bits.len()).step_by(8) {
-                    bytes.push(bits2byte(&bits[j..j + 8]));
-                }
-                //println!("bytes: {:02x?}", bytes);
-                let packet = &bytes[4..];
-                //println!("packet: {:02x?}", packet);
-                let parsed = parsepacket(packet, self.sensor_id);
-                std::fs::OpenOptions::new()
-                    .append(true)
-                    .create(true)
-                    .open(&self.output)
-                    .map_err(|e| -> rustradio::Error { e.into() })?
-                    .write_all(format!("{parsed}\n").as_bytes())
-                    .map_err(|e| -> rustradio::Error { e.into() })?;
-                println!("{parsed}");
-                if let Some(messages) = &self.messages {
-                    if messages.remaining() > 0 {
-                        messages.push(parsed, &[]);
-                    } else {
-                        log::warn!("Decoded stream full; dropping viewer message");
-                    }
-                }
-            }
-        }
-        self.history
-            .drain(0..(self.history.len() - packet_bits_len));
-        Ok(BlockRet::Again)
     }
 }
 
@@ -493,16 +278,6 @@ fn rtl_tune_frequency(opt: &Opt) -> anyhow::Result<u64> {
     Ok(frequency)
 }
 
-fn validate_tune_offset(sample_rate: u32, offset: i64) -> anyhow::Result<()> {
-    // Include the low-pass filter's 50 kHz passband and 10 kHz transition.
-    if offset.unsigned_abs() + 60_000 > u64::from(sample_rate) / 2 {
-        return Err(anyhow!(
-            "tuning offset plus 60 kHz must fit within half the sample rate"
-        ));
-    }
-    Ok(())
-}
-
 fn iq_sample_rate(rate: f64) -> anyhow::Result<u32> {
     if !rate.is_finite() || rate.fract() != 0.0 || rate < 1.0 {
         return Err(anyhow!(
@@ -521,25 +296,9 @@ fn live_rtl_samples(
     translate_rtl(graph, samples, opt.sample_rate, opt.tune_offset)
 }
 
-#[allow(clippy::cast_precision_loss)]
-fn translate_rtl(
+fn add_output(
     graph: &mut (impl GraphRunner + ?Sized),
-    samples: ReadStream<Complex>,
-    sample_rate: u32,
-    offset: i64,
-) -> Result<ReadStream<Complex>> {
-    if offset == 0 {
-        return Ok(samples);
-    }
-    // Tuning above the channel places it at -offset; mix it back to DC.
-    let (rotator, centered) = Rotator::new(samples, sample_rate as f32, offset as f32)?;
-    graph.add(Box::new(rotator));
-    Ok(centered)
-}
-
-fn add_decoder(
-    graph: &mut (impl GraphRunner + ?Sized),
-    prev: ReadStream<u8>,
+    measurements: NCReadStream<Measurement>,
     opt: &Opt,
     server: Option<&IqServer>,
 ) -> Result<()> {
@@ -555,13 +314,11 @@ fn add_decoder(
     } else {
         None
     };
-    let decode = Box::new(Decode::new(
-        prev,
-        opt.sensor_id,
+    graph.add(Box::new(CliOutput::new(
+        measurements,
         opt.output.clone(),
         messages,
-    ));
-    graph.add(decode);
+    )));
     Ok(())
 }
 
@@ -659,57 +416,82 @@ pub fn create_graph(
 
     let (prev, sample_rate) = input_samples(graph, opt)?;
 
-    // Our goal post decimation is to end up at about 200ksps.
-    let fir_decimation: usize = (sample_rate as usize) / 200_000;
-
-    #[allow(clippy::cast_precision_loss)]
-    let samp_rate = sample_rate as f32;
-    #[allow(clippy::cast_precision_loss)]
-    let samp_rate_2 = samp_rate / (fir_decimation as f32);
-    let baud = 38383.5;
-
-    let fir_taps = rustradio::fir::low_pass_complex(
-        samp_rate,
-        samp_rate_2 / 4.0,
-        75_000.0,
-        WindowType::Hamming,
-    )?;
-    info!("Initial FIR filter tap count: {}", fir_taps.len());
-    // Resample.
-    let prev = blockchain![
+    let measurements = add_receiver(
         graph,
         prev,
-        FirFilter::builder(fir_taps)
-            .deci(fir_decimation)
-            .build(prev)?,
-        FftFilter::new(
-            prev.with_name("decimated"),
-            rustradio::fir::low_pass_complex(
-                samp_rate_2,
-                50_000.0,
-                10_000.0,
-                &WindowType::Hamming
-            )?,
-        )?,
-        QuadratureDemod::new(prev.with_name("filtered"), 1.0)?,
-        AddConst::new(prev, opt.offset)?,
-        ZeroCrossing::new(prev.with_name("demodulated"), samp_rate_2 / baud, 0.1)?,
-        BinarySlicer::new(prev.with_name("soft-bits"))?,
-    ]
-    .with_name("bits");
-
-    add_decoder(graph, prev, opt, server.as_ref())?;
+        &ReceiverConfig {
+            fsk_offset: opt.offset,
+            ..ReceiverConfig::new(opt.sensor_id, sample_rate)
+        },
+    )?;
+    add_output(graph, measurements, opt, server.as_ref())?;
     server
         .zip(opt.iq_listen)
         .map(|(server, address)| IqListener::start(server, address, graph.cancel_token()))
         .transpose()
 }
 
+#[derive(rustradio::rustradio_macros::Block)]
+#[rustradio(new)]
+struct CliOutput {
+    #[rustradio(in)]
+    src: NCReadStream<Measurement>,
+    output: String,
+    messages: Option<NCWriteStream<String>>,
+}
+
+impl Block for CliOutput {
+    fn work(&mut self) -> Result<BlockRet<'_>> {
+        let Some((measurement, _tags)) = self.src.pop() else {
+            return Ok(BlockRet::WaitForStream(&self.src, 1));
+        };
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::SystemTime::UNIX_EPOCH)
+            .expect("Time went backwards")
+            .as_secs();
+        update_metrics(&measurement);
+        let parsed = measurement.to_csv(now);
+        std::fs::OpenOptions::new()
+            .append(true)
+            .create(true)
+            .open(&self.output)?
+            .write_all(format!("{parsed}\n").as_bytes())?;
+        println!("{parsed}");
+        if let Some(messages) = &self.messages {
+            if messages.remaining() > 0 {
+                messages.push(parsed, &[]);
+            } else {
+                log::warn!("Decoded stream full; dropping viewer message");
+            }
+        }
+        Ok(BlockRet::Again)
+    }
+}
+
+fn update_metrics(measurement: &Measurement) {
+    if measurement.crc_ok {
+        WATTS.set(measurement.watts.into());
+        BATTERY.set(measurement.battery_status.into());
+        let value = f64::from(measurement.watt_hours) / 1000.0;
+        let old = KWH.get();
+        if old > value {
+            KWH.reset();
+            KWH.inc_by(value);
+        } else {
+            KWH.inc_by(value - old);
+        }
+    }
+    let status = if measurement.crc_ok { "OK" } else { "BAD" };
+    DECODES.with_label_values(&[status]).inc();
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::Decoder;
     use clap::Parser;
-    use rustradio::blocks::IqStreamSink;
+    use rustradio::blocks::{FftFilter, IqStreamSink};
+    use rustradio::window::WindowType;
     use std::time::Duration;
 
     #[test]
@@ -728,13 +510,14 @@ mod tests {
         source.work()?;
         let file = tempfile::NamedTempFile::new()?;
         let (messages, output) = new_nocopy_stream();
-        let mut decoder = Decode::new(
-            input,
-            576_929,
+        let (mut decoder, measurements) = Decoder::new(input, 576_929);
+        decoder.work()?;
+        let mut sink = CliOutput::new(
+            measurements,
             file.path().to_str().unwrap().into(),
             Some(messages),
         );
-        decoder.work()?;
+        sink.work()?;
         let (message, tags) = output.pop().expect("decoded message");
         assert_eq!(
             std::fs::read_to_string(file.path())?,
@@ -1222,34 +1005,5 @@ mod tests {
             assert_eq!(f32_to_i32(i)?, o);
         }
         Ok(())
-    }
-
-    #[test]
-    fn decode() {
-        let packet = vec![
-            0x11, 0xa1, 0x38, 0x07, 0x0e, 0xa2, 0xde, 0x29, 0xe6, 0x8b, 0x1a, 0xfd, 0x74, 0x47,
-            0xcf, 0xf2, 0x14, 0x80, 0x23, 0x7b,
-        ];
-        let got = parsepacket(&packet, 576_929);
-        let want = ",17592,330.560,20.674,100,OK";
-        assert!(got.ends_with(want), "got: {got}, want {want}");
-
-        // With one bitflip.
-        let packet = vec![
-            0x11, 0xa1, 0x38, 0x07, 0x0e, 0xa2, 0xde, 0x29, 0xe7, 0x8b, 0x1a, 0xfd, 0x74, 0x47,
-            0xcf, 0xf2, 0x14, 0x80, 0x23, 0x7b,
-        ];
-        let got = parsepacket(&packet, 576_929);
-        let want = ",17592,330.560,20.674,100,OK";
-        assert!(got.ends_with(want), "got: {got}, want {want}");
-
-        // With two bitflips.
-        let packet = vec![
-            0x11, 0xa1, 0x38, 0x07, 0x0e, 0xa2, 0xdf, 0x29, 0xe6, 0x8b, 0x1a, 0xfd, 0x74, 0x47,
-            0xcf, 0xf2, 0x14, 0x80, 0x23, 0x7a,
-        ];
-        let got = parsepacket(&packet, 576_929);
-        let want = ",17592,330.560,20.674,100,BAD";
-        assert!(got.ends_with(want), "got: {got}, want {want}");
     }
 }
