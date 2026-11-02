@@ -1,6 +1,7 @@
 import { bootstrap } from "./rustradio-ui-bootstrap.js";
 
 try {
+  await (globalThis.coiReady ?? Promise.resolve());
   await bootstrap({
     pkgName: "sparslog_ui",
     wasmMemoryConfig: { initial: 64, maximum: 16384, shared: true },

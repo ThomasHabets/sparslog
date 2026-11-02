@@ -33,7 +33,10 @@ reverse proxy.
 
 `./build-local.sh release` produces optimized output in `web-dist/`. The static
 server supplies the COOP/COEP headers required for the shared-memory worker.
-Other hosting must supply the same headers and serve the assets from one origin.
+For HTTPS hosting without those headers, including GitHub Pages, the packaged
+service worker adds them and reloads the page before starting WASM. Serve the
+contents of `web-dist/` together from one origin. Service workers require HTTPS
+or localhost.
 
 This crate is an independent Cargo workspace using published `rustradio` 0.19
 and `rustradio-ui` 0.2.4. Both crates enable their `unstable` features for IQ
