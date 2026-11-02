@@ -517,9 +517,7 @@ fn live_rtl_samples(
     samples: ReadStream<Complex>,
     opt: &Opt,
 ) -> Result<ReadStream<Complex>> {
-    let samples = samples
-        .with_name("raw")
-        .with_sample_rate(f64::from(opt.sample_rate))?;
+    let samples = samples.with_name("raw");
     translate_rtl(graph, samples, opt.sample_rate, opt.tune_offset)
 }
 
@@ -685,7 +683,7 @@ pub fn create_graph(
             .deci(fir_decimation)
             .build(prev)?,
         FftFilter::new(
-            prev,
+            prev.with_name("decimated"),
             rustradio::fir::low_pass_complex(
                 samp_rate_2,
                 50_000.0,
@@ -693,21 +691,12 @@ pub fn create_graph(
                 &WindowType::Hamming
             )?,
         )?,
-        QuadratureDemod::new(
-            prev.with_name("filtered").with_sample_rate(samp_rate_2)?,
-            1.0
-        )?,
+        QuadratureDemod::new(prev.with_name("filtered"), 1.0)?,
         AddConst::new(prev, opt.offset)?,
-        ZeroCrossing::new(
-            prev.with_name("demodulated")
-                .with_sample_rate(samp_rate_2)?,
-            samp_rate_2 / baud,
-            0.1
-        )?,
-        BinarySlicer::new(prev.with_name("soft-bits").with_sample_rate(baud)?)?,
+        ZeroCrossing::new(prev.with_name("demodulated"), samp_rate_2 / baud, 0.1)?,
+        BinarySlicer::new(prev.with_name("soft-bits"))?,
     ]
-    .with_name("bits")
-    .with_sample_rate(baud)?;
+    .with_name("bits");
 
     add_decoder(graph, prev, opt, server.as_ref())?;
     server
