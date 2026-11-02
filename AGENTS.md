@@ -3,6 +3,7 @@
 * One logical change per commit
 * If changes or or new features are needed on the rustradio crates, the tell the user
 * Do not implement anything that should instead be added in the rustradio APIs
+* Unit tests are at the bottom of the file, in `mod tests {`
 
 ## Commit messages
 
