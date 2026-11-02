@@ -1184,15 +1184,6 @@ checksum = "a6cb138bb79a146c1bd460005623e142ef0181e3d0219cb493e02f7d08a35695"
 
 [[package]]
 name = "itertools"
-version = "0.13.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "413ee7dfc52ee1a4949ceeb7dbc8a33f2d6c088194d9f922fb8318faf1f01186"
-dependencies = [
- "either",
-]
-
-[[package]]
-name = "itertools"
 version = "0.14.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "2b192c782037fadd9cfa75548310488aabdbf3d2da73885b31bd0abd03351285"
@@ -1672,7 +1663,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "8a56d757972c98b346a9b766e3f02746cde6dd1cd1d1d563472929fdd74bec4d"
 dependencies = [
  "anyhow",
- "itertools 0.14.0",
+ "itertools",
  "proc-macro2",
  "quote",
  "syn 2.0.119",
@@ -1685,7 +1676,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b570b25f7617e43d59005d0990ccb79e950a423952cea19671b7a876da390adf"
 dependencies = [
  "anyhow",
- "itertools 0.14.0",
+ "itertools",
  "proc-macro2",
  "quote",
  "syn 2.0.119",
@@ -2009,16 +2000,16 @@ dependencies = [
 
 [[package]]
 name = "rustradio"
-version = "0.19.6"
+version = "0.20.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "3046f06bcc7dfa0628baafe86e2b0b477c3a11e9ac618481cdd136e8c4d57547"
+checksum = "3b36f375e078d65443486e3c1d5e778f84c3fb45e528b86002011c7968f404ec"
 dependencies = [
  "async-channel",
  "async-trait",
  "axum 0.8.9",
  "fast-math",
  "futures-util",
- "itertools 0.13.0",
+ "itertools",
  "libc",
  "log",
  "num-complex",
@@ -2042,25 +2033,25 @@ dependencies = [
 
 [[package]]
 name = "rustradio_macros"
-version = "0.19.6"
+version = "0.20.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "277552d88eb92ffe82148fe38fa4f4ad0bbb2976a9f32f56febd150e72c678c6"
+checksum = "884266dc91929ca4ed862372921e00acade01859d735379cd0823f09ee8a37b4"
 dependencies = [
  "proc-macro2",
  "quote",
  "rustradio_macros_code",
- "syn 2.0.119",
+ "syn 3.0.9",
 ]
 
 [[package]]
 name = "rustradio_macros_code"
-version = "0.19.6"
+version = "0.20.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f84908caf0783794f19fcebed5b7c43c87ef05f2a62ba2b49d5b2bfebba7af3c"
+checksum = "8b36a3c4550bebae629136249a9dbe917344e6637858400a82069c8a027189e9"
 dependencies = [
  "proc-macro2",
  "quote",
- "syn 2.0.119",
+ "syn 3.0.9",
 ]
 
 [[package]]
