@@ -29,11 +29,11 @@ jobs:
       - uses: jetli/wasm-pack-action@v0.4.0
 
       - name: Build site
-        run: cd ui && ./build-local.sh profiling
+        run: ./build-pages.sh
 
       - uses: actions/upload-pages-artifact@v3
         with:
-          path: ui/web-dist
+          path: pages-dist
 
   deploy:
     needs: build

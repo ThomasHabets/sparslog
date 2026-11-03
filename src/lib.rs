@@ -9,7 +9,7 @@ mod decoder;
 mod receiver;
 
 pub use decoder::{Decoder, Measurement};
-pub use receiver::{ReceiverConfig, add_receiver};
+pub use receiver::{ReceiverConfig, ReceiverStreams, add_receiver, add_receiver_with_taps};
 
 /// Native CLI input, output, metrics, and IQ services.
 #[cfg(feature = "cli")]

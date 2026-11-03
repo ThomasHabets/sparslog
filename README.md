@@ -201,3 +201,14 @@ There's also a GNURadio implementation in the `gr/` directory.
 
 * [Technical analysis](https://github.com/kodarn/Sparsnas)
 * [Simple implementation](https://github.com/strigeus/sparsnas_decoder)
+
+## Browser USB receiver
+
+`ui-sdr/` captures RTL-SDR samples using WebUSB and decodes them locally with
+the shared sparslog library. Run `cd ui-sdr && ./build-local.sh`, then
+`python3 serve.py`. Enter a sensor serial and click Start to choose a dongle.
+Use HTTPS or localhost and a WebUSB-capable browser. Nightly and the required
+unstable browser bindings are configured by the crate.
+
+`./build-pages.sh` builds both applications into `pages-dist/`: the remote viewer
+at `ui/`, and the local receiver at `ui-sdr/`. The root page links to both.

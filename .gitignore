@@ -11,3 +11,5 @@ perf.data
 *.data
 *.swp
 data/
+
+/pages-dist/
