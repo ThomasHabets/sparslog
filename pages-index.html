@@ -1,1 +1,86 @@
-<!doctype html><html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Sparslog</title><h1>Sparslog receivers</h1><ul><li><a href="ui/">Remote receiver viewer</a> — connect to an IQ listener.</li><li><a href="ui-sdr/">Browser RTL-SDR receiver</a> — capture and decode using a local USB dongle.</li></ul></html>
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light dark">
+  <meta name="description" content="Receive and decode IKEA Sparsnäs electricity meter signals, directly in your browser or from a remote receiver.">
+  <title>Sparslog · Choose your receiver</title>
+  <style>
+    :root { font: 16px/1.6 system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; color-scheme: light; --page: #f4f6f5; --surface: #fff; --ink: #20332e; --muted: #596f65; --border: #d3dfd7; --accent: #176950; --soft: #e7efe9; }
+    * { box-sizing: border-box; }
+    body { margin: 0; background: var(--page); color: var(--ink); }
+    a { color: inherit; }
+    a:focus-visible { outline: 3px solid var(--accent); outline-offset: 6px; }
+    .shell { max-width: 1120px; margin: auto; padding: 36px 40px 24px; }
+    header, footer { display: flex; align-items: center; justify-content: space-between; gap: 20px; }
+    .brand { display: inline-flex; align-items: center; gap: 12px; font-weight: 650; letter-spacing: -.03em; font-size: 22px; text-decoration: none; }
+    .brand svg { width: 34px; height: 34px; color: var(--accent); }
+    .repo { display: inline-flex; align-items: center; gap: 9px; font-size: 13px; text-underline-offset: 5px; }
+    .repo svg { width: 18px; height: 18px; }
+    .hero { position: relative; padding: 90px 0 64px; overflow: hidden; }
+    .eyebrow, .number, .tag { font: 11px/1.5 ui-monospace, SFMono-Regular, Consolas, monospace; letter-spacing: .12em; text-transform: uppercase; }
+    .eyebrow { color: var(--accent); margin: 0 0 20px; }
+    h1 { position: relative; margin: 0; max-width: 720px; font-size: clamp(38px, 6vw, 66px); font-weight: 550; line-height: 1.08; letter-spacing: -.055em; }
+    .intro { position: relative; max-width: 540px; margin: 24px 0 0; color: var(--muted); font-size: 17px; }
+    .signal { position: absolute; width: 390px; height: 140px; right: -80px; top: 115px; color: var(--accent); opacity: .11; }
+    .choices { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 22px; }
+    .card { display: flex; flex-direction: column; padding: 30px; border: 1px solid var(--border); border-radius: 16px; background: var(--surface); text-decoration: none; transition: border-color .16s, transform .16s; }
+    .card:hover { border-color: var(--accent); transform: translateY(-3px); }
+    .card-top { display: flex; justify-content: space-between; align-items: center; gap: 12px; }
+    .number { color: var(--muted); }
+    .tag { padding: 4px 9px; border-radius: 5px; background: var(--soft); color: var(--accent); letter-spacing: .04em; }
+    h2 { margin: 34px 0 10px; font-size: 25px; font-weight: 600; line-height: 1.2; letter-spacing: -.035em; }
+    .description { margin: 0; color: var(--muted); font-size: 15px; }
+    .requirement { margin: 22px 0 30px; color: var(--muted); font-size: 12px; }
+    .action { display: flex; justify-content: space-between; align-items: center; margin-top: auto; padding-top: 20px; border-top: 1px solid var(--border); color: var(--accent); font-size: 14px; font-weight: 650; }
+    .action span:last-child { font-size: 22px; font-weight: 400; }
+    .note { margin: 26px 0 60px; color: var(--muted); font-size: 13px; }
+    footer { border-top: 1px solid var(--border); padding: 20px 0 0; color: var(--muted); font-size: 12px; }
+    footer a { text-underline-offset: 4px; }
+    @media (prefers-color-scheme: dark) { :root { color-scheme: dark; --page: #111a17; --surface: #19241f; --ink: #e0eae4; --muted: #9aafa3; --border: #34493c; --accent: #5ecca0; --soft: #243b2e; } }
+    @media (max-width: 650px) { .shell { padding: 24px 20px; } .hero { padding: 64px 0 40px; } .choices { grid-template-columns: 1fr; gap: 16px; } .card { padding: 24px; } h2 { margin-top: 26px; } .signal { right: -220px; } .note { margin-bottom: 40px; } footer { align-items: start; flex-direction: column; gap: 8px; } }
+    @media (prefers-reduced-motion: reduce) { .card { transition: none; } .card:hover { transform: none; } }
+  </style>
+</head>
+<body>
+  <div class="shell">
+    <header>
+      <a class="brand" href="./" aria-label="Sparslog home">
+        <svg viewBox="0 0 32 32" fill="none" aria-hidden="true"><path d="M2 17h7l3-9 5 17 4-12 3 4h6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        Sparslog
+      </a>
+      <a class="repo" href="https://github.com/ThomasHabets/sparslog">
+        <svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M8 4H4v16h16v-4M14 4h6v6M20 4 10 14" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        View on GitHub
+      </a>
+    </header>
+    <main>
+      <section class="hero" aria-labelledby="title">
+        <p class="eyebrow">IKEA Sparsnäs / Radio receiver</p>
+        <svg class="signal" viewBox="0 0 390 140" fill="none" aria-hidden="true"><path d="M0 70h50l14-15 15 30 18-60 20 100 22-115 24 100 20-60 16 40 15-20h161" stroke="currentColor" stroke-width="2"/></svg>
+        <h1 id="title">Your power meter.<br>A clearer signal.</h1>
+        <p class="intro">Receive and decode your Sparsnäs electricity meter’s radio signals. Choose how to connect below.</p>
+      </section>
+      <section class="choices" aria-label="Choose a receiver">
+        <a class="card" href="ui-sdr/">
+          <div class="card-top"><span class="number">01 / Local capture</span><span class="tag">USB dongle</span></div>
+          <h2>Receive in your browser</h2>
+          <p class="description">Plug in an RTL-SDR dongle and run capture and decoding right here. Watch the filtered spectrum, triggered waveforms, and live measurements.</p>
+          <p class="requirement">Requires a WebUSB-capable browser, an RTL-SDR dongle, and your sensor serial number.</p>
+          <div class="action"><span>Open browser receiver</span><span aria-hidden="true">↗</span></div>
+        </a>
+        <a class="card" href="ui/">
+          <div class="card-top"><span class="number">02 / Remote receiver</span><span class="tag">IQ stream</span></div>
+          <h2>Connect to a receiver</h2>
+          <p class="description">Already running Sparslog on another machine? Connect to its IQ listener to explore the signal and follow decoded measurements.</p>
+          <p class="requirement">Requires a running Sparslog receiver with IQ streaming enabled and a browser-reachable secure connection.</p>
+          <div class="action"><span>Open remote viewer</span><span aria-hidden="true">↗</span></div>
+        </a>
+      </section>
+      <p class="note">Both views include a spectrum waterfall, a triggered time display, and the latest decoded measurements.</p>
+    </main>
+    <footer><span>Sparslog · Sparsnäs electricity meter receiver</span><a href="https://github.com/ThomasHabets/sparslog#readme">Documentation &amp; source code ↗</a></footer>
+  </div>
+</body>
+</html>
