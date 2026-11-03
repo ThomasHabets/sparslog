@@ -154,35 +154,31 @@ fn build_receiver(
                 &WindowType::Hamming
             )?,
         )?,
-    ];
-    let prev = prev.with_name("filtered");
-    let prev = if taps {
-        let (tee, signal, display) = Tee::new(prev)?;
-        graph.add(Box::new(tee));
-        filtered = Some(display);
-        signal
-    } else {
-        prev
-    };
-    let prev = blockchain![
-        graph,
-        prev,
-        QuadratureDemod::new(prev, 1.0)?,
+        {
+            let prev = prev.with_name("filtered");
+            let prev = if taps {
+                let (tee, signal, display) = Tee::new(prev)?;
+                graph.add(Box::new(tee));
+                filtered = Some(display);
+                signal
+            } else {
+                prev
+            };
+            QuadratureDemod::new(prev, 1.0)?
+        },
         AddConst::new(prev, config.fsk_offset)?,
-    ];
-    let prev = prev.with_name("demodulated");
-    let prev = if taps {
-        let (tee, signal, display) = Tee::new(prev)?;
-        graph.add(Box::new(tee));
-        demodulated = Some(display);
-        signal
-    } else {
-        prev
-    };
-    let prev = blockchain![
-        graph,
-        prev,
-        ZeroCrossing::new(prev, samp_rate_2 / baud, 0.1)?,
+        {
+            let prev = prev.with_name("demodulated");
+            let prev = if taps {
+                let (tee, signal, display) = Tee::new(prev)?;
+                graph.add(Box::new(tee));
+                demodulated = Some(display);
+                signal
+            } else {
+                prev
+            };
+            ZeroCrossing::new(prev, samp_rate_2 / baud, 0.1)?
+        },
         BinarySlicer::new(prev.with_name("soft-bits"))?,
     ]
     .with_name("bits");
