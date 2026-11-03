@@ -3,7 +3,7 @@ use std::future::{Future, poll_fn};
 use std::task::Poll;
 
 use async_channel::{Receiver, Sender};
-use rustradio::blocks::{ComplexToFloat, Fft, NCMap, StreamAlign, StreamChunks, Tee};
+use rustradio::blocks::{Fft, NCMap, StreamChunks, Tee};
 use rustradio::graph::GraphRunner;
 use rustradio::{Complex, Float};
 use rustradio_ui::AppEmpty;
@@ -11,7 +11,7 @@ use rustradio_ui::worker::send_message;
 use wasm_bindgen::JsValue;
 use wasm_bindgen_futures::spawn_local;
 
-use crate::display::{DisplaySink, MessageSink, WaveformSink, waveform_size, window_chunk};
+use crate::display::{DisplaySink, MessageSink, waveform_size, waveform_windows, window_chunk};
 use crate::{AppMessage, Connection, MainToWorker, WorkerToMain};
 
 pub(crate) const SPECTRUM: &str = "spectrum";
@@ -182,23 +182,7 @@ fn waveform_display(
     demodulated: rustradio::stream::ReadStream<Float>,
     points: usize,
 ) -> rustradio::Result<Receiver<()>> {
-    let (align, filtered, demodulated) = StreamAlign::new(filtered, demodulated)?;
-    graph.add(Box::new(align));
-    let (convert, in_phase, quadrature) = ComplexToFloat::new(filtered)?;
-    graph.add(Box::new(convert));
-    let (chunks, in_phase) = StreamChunks::new(in_phase, points)?;
-    graph.add(Box::new(chunks));
-    let (chunks, quadrature) = StreamChunks::new(quadrature, points)?;
-    graph.add(Box::new(chunks));
-    let (chunks, demodulated) = StreamChunks::new(demodulated, points)?;
-    graph.add(Box::new(chunks));
-    let (frames, windows) = async_channel::bounded(2);
-    graph.add(Box::new(WaveformSink {
-        in_phase,
-        quadrature,
-        demodulated,
-        frames,
-    }));
+    let windows = waveform_windows(graph, filtered, demodulated, points)?;
     let (done, finished) = async_channel::bounded(1);
     spawn_local(async move {
         while let Ok(window) = windows.recv().await {

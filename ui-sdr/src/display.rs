@@ -45,8 +45,8 @@ impl Block for MessageSink {
     }
 }
 
-// Post each aligned window as one message so queue overflow drops all traces
-// together. Chunking and sample alignment remain rustradio graph operations.
+// Post each local waveform window as one message so queue overflow drops all
+// traces together. The taps share a continuous graph timeline.
 #[derive(rustradio_macros::Block)]
 pub(crate) struct WaveformSink {
     #[rustradio(in)]
@@ -83,6 +83,35 @@ impl Block for WaveformSink {
     }
 }
 
+/// Chunk the two continuous local taps using their common zero-based origin.
+/// Demodulated sample n describes filtered samples n and n+1, so its stream
+/// contains one fewer sample at EOF. There are no independent transport offsets
+/// to align, and neither input is required to carry IQ transport position tags.
+pub(crate) fn waveform_windows(
+    graph: &mut impl rustradio::graph::GraphRunner,
+    filtered: rustradio::stream::ReadStream<Complex>,
+    demodulated: rustradio::stream::ReadStream<Float>,
+    points: usize,
+) -> rustradio::Result<async_channel::Receiver<Vec<TaggedVec<Float>>>> {
+    use rustradio::blocks::{ComplexToFloat, StreamChunks};
+    let (convert, in_phase, quadrature) = ComplexToFloat::new(filtered)?;
+    graph.add(Box::new(convert));
+    let (chunks, in_phase) = StreamChunks::new(in_phase, points)?;
+    graph.add(Box::new(chunks));
+    let (chunks, quadrature) = StreamChunks::new(quadrature, points)?;
+    graph.add(Box::new(chunks));
+    let (chunks, demodulated) = StreamChunks::new(demodulated, points)?;
+    graph.add(Box::new(chunks));
+    let (frames, windows) = async_channel::bounded(2);
+    graph.add(Box::new(WaveformSink {
+        in_phase,
+        quadrature,
+        demodulated,
+        frames,
+    }));
+    Ok(windows)
+}
+
 pub(crate) fn contiguous<T>(samples: Vec<T>, tags: Vec<Tag>) -> Vec<(Vec<T>, Vec<Tag>)> {
     if tags.iter().any(|tag| tag.key() == GAP_SAMPLES) {
         vec![]
@@ -114,6 +143,41 @@ pub(crate) fn waveform_size(rate: f64) -> rustradio::Result<usize> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn local_receiver_waveforms_accept_untagged_capture() -> Result<(), Box<dyn std::error::Error>>
+    {
+        use rustradio::blocks::VectorSource;
+        use rustradio::graph::GraphRunner;
+        use std::future::Future;
+        let mut graph = rustradio::wasm::wasm_graph::WasmGraph::new();
+        let (source, samples) = VectorSource::new(vec![Complex::default(); 65536])?;
+        graph.add(Box::new(source));
+        let taps = sparslog::add_receiver_with_taps(
+            &mut graph,
+            samples,
+            &sparslog::ReceiverConfig::new(576_929, 1_000_000),
+        )?;
+        let windows = waveform_windows(&mut graph, taps.filtered, taps.demodulated, 128)?;
+        // All inputs are in memory: the WASM executor must complete without
+        // browser I/O or a wake. Native Graph statistics require browser clocks
+        // when rustradio's wasm feature is enabled.
+        let (_poke, wake) = async_channel::bounded(1);
+        {
+            let mut running = std::pin::pin!(graph.run_async(wake));
+            let mut context = std::task::Context::from_waker(std::task::Waker::noop());
+            assert!(matches!(
+                running.as_mut().poll(&mut context),
+                std::task::Poll::Ready(Ok(()))
+            ));
+        }
+        drop(graph);
+        let frame = windows.try_recv()?;
+        assert_eq!(frame.len(), 3);
+        assert!(frame.iter().all(|trace| trace.data.len() == 128));
+        assert!(taps.measurements.eof());
+        Ok(())
+    }
 
     #[test]
     fn decoded_messages_wait_for_display_capacity() -> rustradio::Result<()> {
