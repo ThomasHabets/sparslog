@@ -9,8 +9,6 @@ ignore = [
         "RUSTSEC-2026-0543", # chrono
 
         "RUSTSEC-2026-0542", # humantime, via console-subscriber
-
-        "RUSTSEC-2026-0592", # url
 ]
 
 [licenses]
