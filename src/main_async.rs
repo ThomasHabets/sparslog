@@ -1,6 +1,6 @@
 use anyhow::Result;
 use clap::Parser;
-use rustradio::graph::GraphRunner;
+use rustradio::graph::{GraphBuild, GraphStats};
 
 #[tokio::main]
 async fn main() -> Result<()> {

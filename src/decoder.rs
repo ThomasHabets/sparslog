@@ -169,7 +169,7 @@ impl Block for Decoder {
         if available == 0 {
             return Ok(BlockRet::WaitForStream(&self.dst, 1));
         }
-        let (input, _) = self.src.read_buf()?;
+        let input = self.src.read_buf()?;
         if input.is_empty() {
             return Ok(BlockRet::WaitForStream(&self.src, 1));
         }
@@ -198,7 +198,7 @@ impl Block for Decoder {
                 break;
             }
         }
-        input.consume(consumed);
+        input.consume_discard_tags(consumed);
         Ok(BlockRet::Again)
     }
 }

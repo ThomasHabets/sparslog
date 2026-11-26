@@ -4,7 +4,7 @@ use std::task::Poll;
 
 use async_channel::{Receiver, Sender};
 use rustradio::blocks::{ComplexToFloat, Fft, NCMap, StreamAlign, StreamChunks, Tee};
-use rustradio::graph::GraphRunner;
+use rustradio::graph::GraphBuildExt;
 use rustradio::iq_stream::{StreamOptions, proto};
 use rustradio::{Complex, Float};
 use rustradio_ui::AppEmpty;
@@ -103,9 +103,9 @@ async fn run_graph(settings: Connection, stop: Receiver<()>) -> rustradio::Resul
     }))
     .await?;
     let mut graph = rustradio::wasm::wasm_graph::WasmGraph::new();
-    graph.add(Box::new(source));
-    graph.add(Box::new(demodulated));
-    graph.add(Box::new(decoded));
+    graph.add(source);
+    graph.add(demodulated);
+    graph.add(decoded);
     let messages_done = message_display(&mut graph, messages, poke);
     let (filtered, rows_done) = spectrum_display(&mut graph, samples, sample_rate)?;
     let waveform_done = waveform_display(&mut graph, filtered, waveform, waveform_points)?;
@@ -135,10 +135,10 @@ fn message_display(
     poke: Sender<()>,
 ) -> Receiver<()> {
     let (message_tx, message_rx) = async_channel::bounded(32);
-    graph.add(Box::new(MessageSink {
+    graph.add(MessageSink {
         src: messages,
         messages: message_tx,
-    }));
+    });
     let (notify_done, messages_done) = async_channel::bounded(1);
     spawn_local(async move {
         while let Ok(message) = message_rx.recv().await {
@@ -164,9 +164,9 @@ fn spectrum_display(
     sample_rate: f32,
 ) -> rustradio::Result<(rustradio::stream::ReadStream<Complex>, Receiver<()>)> {
     let (tee, spectrum, filtered) = Tee::new(samples)?;
-    graph.add(Box::new(tee));
+    graph.add(tee);
     let (chunks, chunks_out) = StreamChunks::new(spectrum, usize::from(FFT_SIZE))?;
-    graph.add(Box::new(chunks));
+    graph.add(chunks);
     let window = rustradio::window::WindowType::Hamming
         .make_window(usize::from(FFT_SIZE))
         .0;
@@ -185,9 +185,9 @@ fn spectrum_display(
             vec![]
         }
     });
-    graph.add(Box::new(select));
+    graph.add(select);
     let (fft, fft_out) = Fft::from_fft_size(fft_in, usize::from(FFT_SIZE))?;
-    graph.add(Box::new(fft));
+    graph.add(fft);
     let (power, power_out) = NCMap::new(fft_out, "FFT power", |bins: Vec<Complex>, tags| {
         vec![(
             bins.iter()
@@ -196,7 +196,7 @@ fn spectrum_display(
             tags,
         )]
     });
-    graph.add(Box::new(power));
+    graph.add(power);
     let rows_done = display(graph, power_out, SPECTRUM);
     Ok((filtered, rows_done))
 }
@@ -208,22 +208,22 @@ fn waveform_display(
     points: usize,
 ) -> rustradio::Result<Receiver<()>> {
     let (align, filtered, demodulated) = StreamAlign::new(filtered, demodulated)?;
-    graph.add(Box::new(align));
+    graph.add(align);
     let (convert, in_phase, quadrature) = ComplexToFloat::new(filtered)?;
-    graph.add(Box::new(convert));
+    graph.add(convert);
     let (chunks, in_phase) = StreamChunks::new(in_phase, points)?;
-    graph.add(Box::new(chunks));
+    graph.add(chunks);
     let (chunks, quadrature) = StreamChunks::new(quadrature, points)?;
-    graph.add(Box::new(chunks));
+    graph.add(chunks);
     let (chunks, demodulated) = StreamChunks::new(demodulated, points)?;
-    graph.add(Box::new(chunks));
+    graph.add(chunks);
     let (frames, windows) = async_channel::bounded(2);
-    graph.add(Box::new(WaveformSink {
+    graph.add(WaveformSink {
         in_phase,
         quadrature,
         demodulated,
         frames,
-    }));
+    });
     let (done, finished) = async_channel::bounded(1);
     spawn_local(async move {
         while let Ok(window) = windows.recv().await {
@@ -246,7 +246,7 @@ fn display(
 ) -> Receiver<()> {
     let (frames, rows) = async_channel::bounded(2);
     let (done, finished) = async_channel::bounded(1);
-    graph.add(Box::new(DisplaySink { src: input, frames }));
+    graph.add(DisplaySink { src: input, frames });
     spawn_local(async move {
         while let Ok(row) = rows.recv().await {
             if send_message(WorkerToMain::Floats(name.into(), vec![row]))

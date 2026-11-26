@@ -1,5 +1,6 @@
 use async_channel::Sender;
 use rustradio::block::{Block, BlockRet};
+use rustradio::graph::GraphBuildExt;
 use rustradio::iq_stream::GAP_SAMPLES;
 use rustradio::stream::{NCReadStream, Tag};
 use rustradio::{Complex, Float};
@@ -88,27 +89,27 @@ impl Block for WaveformSink {
 /// contains one fewer sample at EOF. There are no independent transport offsets
 /// to align, and neither input is required to carry IQ transport position tags.
 pub(crate) fn waveform_windows(
-    graph: &mut impl rustradio::graph::GraphRunner,
+    graph: &mut rustradio::wasm::wasm_graph::WasmGraph,
     filtered: rustradio::stream::ReadStream<Complex>,
     demodulated: rustradio::stream::ReadStream<Float>,
     points: usize,
 ) -> rustradio::Result<async_channel::Receiver<Vec<TaggedVec<Float>>>> {
     use rustradio::blocks::{ComplexToFloat, StreamChunks};
     let (convert, in_phase, quadrature) = ComplexToFloat::new(filtered)?;
-    graph.add(Box::new(convert));
+    graph.add(convert);
     let (chunks, in_phase) = StreamChunks::new(in_phase, points)?;
-    graph.add(Box::new(chunks));
+    graph.add(chunks);
     let (chunks, quadrature) = StreamChunks::new(quadrature, points)?;
-    graph.add(Box::new(chunks));
+    graph.add(chunks);
     let (chunks, demodulated) = StreamChunks::new(demodulated, points)?;
-    graph.add(Box::new(chunks));
+    graph.add(chunks);
     let (frames, windows) = async_channel::bounded(2);
-    graph.add(Box::new(WaveformSink {
+    graph.add(WaveformSink {
         in_phase,
         quadrature,
         demodulated,
         frames,
-    }));
+    });
     Ok(windows)
 }
 
@@ -148,11 +149,10 @@ mod tests {
     fn local_receiver_waveforms_accept_untagged_capture() -> Result<(), Box<dyn std::error::Error>>
     {
         use rustradio::blocks::VectorSource;
-        use rustradio::graph::GraphRunner;
         use std::future::Future;
         let mut graph = rustradio::wasm::wasm_graph::WasmGraph::new();
         let (source, samples) = VectorSource::new(vec![Complex::default(); 65536])?;
-        graph.add(Box::new(source));
+        graph.add(source);
         let taps = sparslog::add_receiver_with_taps(
             &mut graph,
             samples,

@@ -5,7 +5,7 @@ use log::info;
 use rustradio::blocks::{
     AddConst, BinarySlicer, FftFilter, FirFilter, QuadratureDemod, Rotator, Tee, ZeroCrossing,
 };
-use rustradio::graph::GraphRunner;
+use rustradio::graph::{GraphBuild, GraphBuildExt};
 use rustradio::stream::{NCReadStream, ReadStream};
 use rustradio::window::WindowType;
 use rustradio::{Complex, Result, blockchain};
@@ -46,13 +46,13 @@ impl ReceiverConfig {
 ///
 /// ```
 /// use rustradio::blocks::VectorSource;
-/// use rustradio::graph::{Graph, GraphRunner};
+/// use rustradio::graph::{Graph, GraphBuild, GraphBuildExt, GraphRunner};
 /// use rustradio::Complex;
 /// use sparslog::{ReceiverConfig, add_receiver};
 ///
 /// let mut graph = Graph::new();
 /// let (source, samples) = VectorSource::new(vec![Complex::default(); 4096])?;
-/// graph.add(Box::new(source));
+/// graph.add(source);
 /// let config = ReceiverConfig::new(576_929, 1_000_000);
 /// let measurements = add_receiver(&mut graph, samples, &config)?;
 /// // Attach an application sink to `measurements`, then run the graph.
@@ -63,7 +63,7 @@ impl ReceiverConfig {
 /// Returns an error for unsupported sample rates, tuning offsets, nonfinite
 /// FSK offsets, or if constructing a DSP block fails.
 pub fn add_receiver(
-    graph: &mut (impl GraphRunner + ?Sized),
+    graph: &mut (impl GraphBuildExt + ?Sized),
     input: ReadStream<Complex>,
     config: &ReceiverConfig,
 ) -> anyhow::Result<NCReadStream<Measurement>> {
@@ -90,7 +90,7 @@ pub struct ReceiverStreams {
 /// # Panics
 /// Panics if the internal receiver builder fails to return requested taps.
 pub fn add_receiver_with_taps(
-    graph: &mut (impl GraphRunner + ?Sized),
+    graph: &mut (impl GraphBuild + ?Sized),
     input: ReadStream<Complex>,
     config: &ReceiverConfig,
 ) -> anyhow::Result<ReceiverStreams> {
@@ -106,7 +106,7 @@ pub fn add_receiver_with_taps(
 
 type Taps = (ReadStream<Complex>, ReadStream<f32>);
 fn build_receiver(
-    graph: &mut (impl GraphRunner + ?Sized),
+    graph: &mut (impl GraphBuildExt + ?Sized),
     input: ReadStream<Complex>,
     config: &ReceiverConfig,
     taps: bool,
@@ -158,7 +158,7 @@ fn build_receiver(
             let prev = prev.with_name("filtered");
             let prev = if taps {
                 let (tee, signal, display) = Tee::new(prev)?;
-                graph.add(Box::new(tee));
+                graph.add(tee);
                 filtered = Some(display);
                 signal
             } else {
@@ -171,7 +171,7 @@ fn build_receiver(
             let prev = prev.with_name("demodulated");
             let prev = if taps {
                 let (tee, signal, display) = Tee::new(prev)?;
-                graph.add(Box::new(tee));
+                graph.add(tee);
                 demodulated = Some(display);
                 signal
             } else {
@@ -184,13 +184,13 @@ fn build_receiver(
     .with_name("bits");
 
     let (decoder, measurements) = Decoder::new(prev, config.sensor_id);
-    graph.add(Box::new(decoder));
+    graph.add(decoder);
     Ok((measurements, filtered.zip(demodulated)))
 }
 
 #[allow(clippy::cast_precision_loss)]
 pub(crate) fn translate_rtl(
-    graph: &mut (impl GraphRunner + ?Sized),
+    graph: &mut (impl GraphBuildExt + ?Sized),
     samples: ReadStream<Complex>,
     sample_rate: u32,
     offset: i64,
@@ -200,7 +200,7 @@ pub(crate) fn translate_rtl(
     }
     // Tuning above the channel places it at -offset; mix it back to DC.
     let (rotator, centered) = Rotator::new(samples, sample_rate as f32, offset as f32)?;
-    graph.add(Box::new(rotator));
+    graph.add(rotator);
     Ok(centered)
 }
 
@@ -218,13 +218,14 @@ pub(crate) fn validate_tune_offset(sample_rate: u32, offset: i64) -> anyhow::Res
 mod tests {
     use super::*;
     use rustradio::blocks::VectorSource;
+    use rustradio::graph::GraphRunner;
 
     #[test]
     fn display_taps_drain_and_report_fractional_rate() -> anyhow::Result<()> {
         use rustradio::blocks::VectorSink;
         let mut graph = rustradio::graph::Graph::new();
         let (source, samples) = VectorSource::new(vec![Complex::default(); 65536])?;
-        graph.add(Box::new(source));
+        graph.add(source);
         let output = add_receiver_with_taps(
             &mut graph,
             samples,
@@ -233,10 +234,10 @@ mod tests {
         assert!((output.sample_rate - 200_000.6).abs() < 0.001);
         let filtered = VectorSink::new(output.filtered, 65536);
         let filtered_data = filtered.hook();
-        graph.add(Box::new(filtered));
+        graph.add(filtered);
         let demodulated = VectorSink::new(output.demodulated, 65536);
         let demodulated_data = demodulated.hook();
-        graph.add(Box::new(demodulated));
+        graph.add(demodulated);
         graph.run()?;
         // Quadrature demodulation needs the preceding sample and emits one fewer.
         assert_eq!(
@@ -276,7 +277,7 @@ mod tests {
         for rate in [200_000, 1_000_000, 1_024_000] {
             let mut graph = rustradio::graph::Graph::new();
             let (source, input) = VectorSource::new(vec![Complex::default(); 32_768])?;
-            graph.add(Box::new(source));
+            graph.add(source);
             let measurements =
                 add_receiver(&mut graph, input, &ReceiverConfig::new(576_929, rate))?;
             graph.run()?;

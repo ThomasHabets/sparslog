@@ -8,7 +8,7 @@ use anyhow::anyhow;
 use log::debug;
 use rustradio::block::{Block, BlockRet};
 use rustradio::blocks::{FileSource, IqStreamSource, RtlSdrDecode, RtlSdrSource, TcpSource};
-use rustradio::graph::GraphRunner;
+use rustradio::graph::GraphBuildExt;
 use rustradio::iq_stream::{IqServer, IqStreamStringSink, StreamOptions, proto};
 use rustradio::stream::{NCReadStream, NCWriteStream, ReadStream, new_nocopy_stream};
 use rustradio::{Complex, Result, blockchain};
@@ -288,7 +288,7 @@ fn iq_sample_rate(rate: f64) -> anyhow::Result<u32> {
 }
 
 fn live_rtl_samples(
-    graph: &mut (impl GraphRunner + ?Sized),
+    graph: &mut (impl GraphBuildExt + ?Sized),
     samples: ReadStream<Complex>,
     opt: &Opt,
 ) -> Result<ReadStream<Complex>> {
@@ -297,33 +297,29 @@ fn live_rtl_samples(
 }
 
 fn add_output(
-    graph: &mut (impl GraphRunner + ?Sized),
+    graph: &mut (impl GraphBuildExt + ?Sized),
     measurements: NCReadStream<Measurement>,
     opt: &Opt,
     server: Option<&IqServer>,
 ) -> Result<()> {
     let messages = if let Some(server) = server {
         let (messages, input) = new_nocopy_stream();
-        graph.add(Box::new(
+        graph.add(
             // Sparsnäs normally transmits one packet every 15 seconds.
             IqStreamStringSink::builder(input, server, "decoded", 1.0 / 15.0)
                 .blocking(false)
                 .build()?,
-        ));
+        );
         Some(messages)
     } else {
         None
     };
-    graph.add(Box::new(CliOutput::new(
-        measurements,
-        opt.output.clone(),
-        messages,
-    )));
+    graph.add(CliOutput::new(measurements, opt.output.clone(), messages));
     Ok(())
 }
 
 fn input_samples(
-    graph: &mut (impl GraphRunner + ?Sized),
+    graph: &mut (impl GraphBuildExt + ?Sized),
     opt: &Opt,
 ) -> anyhow::Result<(ReadStream<Complex>, u32)> {
     let mut sample_rate = opt.sample_rate;
@@ -340,7 +336,7 @@ fn input_samples(
             )?;
             sample_rate = iq_sample_rate(status.description().sample_rate_hz)?;
             validate_tune_offset(sample_rate, opt.tune_offset)?;
-            graph.add(Box::new(source));
+            graph.add(source);
             translate_rtl(graph, samples, sample_rate, opt.tune_offset)?
         } else if let Some(connect) = &opt.connect {
             if opt.read.is_some() {
@@ -389,7 +385,7 @@ fn input_samples(
 /// If given incompatible cmdline options, if the IQ listener cannot start,
 /// or if an `IqStream` connection or its advertised sample rate is invalid.
 pub fn create_graph(
-    graph: &mut (impl GraphRunner + ?Sized),
+    graph: &mut (impl GraphBuildExt + ?Sized),
     opt: &Opt,
 ) -> anyhow::Result<Option<IqListener>> {
     if let Some(prom) = &opt.prometheus {
@@ -491,6 +487,7 @@ mod tests {
     use crate::Decoder;
     use clap::Parser;
     use rustradio::blocks::{FftFilter, IqStreamSink};
+    use rustradio::graph::GraphBuild;
     use rustradio::window::WindowType;
     use std::time::Duration;
 
@@ -642,7 +639,7 @@ mod tests {
                     .collect();
                 let mut graph = rustradio::graph::Graph::new();
                 let (source, samples) = VectorSource::new(samples)?;
-                graph.add(Box::new(source));
+                graph.add(source);
                 let centered = translate_rtl(&mut graph, samples, RATE, offset)?;
                 let (filter, output) = FftFilter::new(
                     centered,
@@ -653,10 +650,10 @@ mod tests {
                         &WindowType::Hamming,
                     )?,
                 )?;
-                graph.add(Box::new(filter));
+                graph.add(filter);
                 let sink = VectorSink::new(output, 16_384);
                 let captured = sink.hook();
-                graph.add(Box::new(sink));
+                graph.add(sink);
                 run_sync_graph(graph).await?;
                 let captured = captured.data();
                 let settled = &captured.samples()[1024..];
@@ -700,11 +697,11 @@ mod tests {
                 .tags(std::slice::from_ref(&tag))
                 .build()?;
             let mut graph = rustradio::graph::Graph::new();
-            graph.add(Box::new(source));
+            graph.add(source);
             let output = translate_rtl(&mut graph, samples, 1_024_000, offset)?;
             let sink = VectorSink::new(output, 64);
             let captured = sink.hook();
-            graph.add(Box::new(sink));
+            graph.add(sink);
             run_sync_graph(graph).await?;
             let captured = captured.data();
             assert_eq!(captured.samples().len(), 64);
@@ -808,12 +805,12 @@ mod tests {
                     })
                     .collect();
                 let (source, samples) = VectorSource::new(values)?;
-                sender.add(Box::new(source));
-                sender.add(Box::new(
+                sender.add(source);
+                sender.add(
                     IqStreamSink::builder(samples, &server, "channel", 400_000.0)
                         .blocking(false)
                         .build()?,
-                ));
+                );
                 let upstream =
                     IqListener::start(server, "127.0.0.1:0".parse()?, sender.cancel_token())?;
                 let mut opt = iq_options(upstream.local_addr())?;
@@ -824,7 +821,7 @@ mod tests {
                 let mut sync_graph = rustradio::graph::Graph::new();
                 let mut mt_graph = rustradio::mtgraph::MTGraph::new();
                 let mut async_graph = rustradio::agraph::AsyncGraph::new();
-                let graph: &mut dyn GraphRunner = match mode {
+                let graph: &mut dyn GraphBuild = match mode {
                     1 => &mut mt_graph,
                     2 => &mut async_graph,
                     _ => &mut sync_graph,
@@ -833,7 +830,7 @@ mod tests {
                 assert_eq!(sample_rate, 400_000);
                 let sink = VectorSink::new(input, 8192);
                 let captured = sink.hook();
-                graph.add(Box::new(sink));
+                graph.add(sink);
                 let decoding = async {
                     if mode == 2 {
                         let cancel = async_graph.cancel_token();
@@ -925,7 +922,9 @@ mod tests {
         Ok(())
     }
 
-    async fn run_sync_graph(mut graph: impl GraphRunner + Send + 'static) -> anyhow::Result<()> {
+    async fn run_sync_graph(
+        mut graph: impl GraphBuildExt + Send + 'static + rustradio::graph::GraphRunner,
+    ) -> anyhow::Result<()> {
         let cancel = graph.cancel_token();
         let task = tokio::task::spawn_blocking(move || graph.run());
         let result = tokio::time::timeout(Duration::from_secs(5), task).await;

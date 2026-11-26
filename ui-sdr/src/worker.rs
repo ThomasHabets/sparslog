@@ -4,7 +4,7 @@ use std::task::Poll;
 
 use async_channel::{Receiver, Sender};
 use rustradio::blocks::{Fft, NCMap, StreamChunks, Tee};
-use rustradio::graph::GraphRunner;
+use rustradio::graph::GraphBuildExt;
 use rustradio::{Complex, Float};
 use rustradio_ui::AppEmpty;
 use rustradio_ui::worker::send_message;
@@ -51,9 +51,9 @@ async fn run_graph(settings: Connection, stop: Receiver<()>) -> rustradio::Resul
         format!("usb-{}", settings.session),
     )?;
     SOURCE.with(|slot| *slot.borrow_mut() = Some((tx, poke.clone())));
-    graph.add(Box::new(source));
+    graph.add(source);
     let (convert, samples) = rustradio::blocks::RtlSdrDecode::new(bytes)?;
-    graph.add(Box::new(convert));
+    graph.add(convert);
     let output = sparslog::add_receiver_with_taps(
         &mut graph,
         samples,
@@ -83,7 +83,7 @@ async fn run_graph(settings: Connection, stop: Receiver<()>) -> rustradio::Resul
             )]
         },
     );
-    graph.add(Box::new(format));
+    graph.add(format);
     let samples = output.filtered;
     let waveform = output.demodulated;
     let messages_done = message_display(&mut graph, messages, poke);
@@ -110,10 +110,10 @@ fn message_display(
     poke: Sender<()>,
 ) -> Receiver<()> {
     let (message_tx, message_rx) = async_channel::bounded(32);
-    graph.add(Box::new(MessageSink {
+    graph.add(MessageSink {
         src: messages,
         messages: message_tx,
-    }));
+    });
     let (notify_done, messages_done) = async_channel::bounded(1);
     spawn_local(async move {
         while let Ok(message) = message_rx.recv().await {
@@ -139,9 +139,9 @@ fn spectrum_display(
     sample_rate: f32,
 ) -> rustradio::Result<(rustradio::stream::ReadStream<Complex>, Receiver<()>)> {
     let (tee, spectrum, filtered) = Tee::new(samples)?;
-    graph.add(Box::new(tee));
+    graph.add(tee);
     let (chunks, chunks_out) = StreamChunks::new(spectrum, usize::from(FFT_SIZE))?;
-    graph.add(Box::new(chunks));
+    graph.add(chunks);
     let window = rustradio::window::WindowType::Hamming
         .make_window(usize::from(FFT_SIZE))
         .0;
@@ -160,9 +160,9 @@ fn spectrum_display(
             vec![]
         }
     });
-    graph.add(Box::new(select));
+    graph.add(select);
     let (fft, fft_out) = Fft::from_fft_size(fft_in, usize::from(FFT_SIZE))?;
-    graph.add(Box::new(fft));
+    graph.add(fft);
     let (power, power_out) = NCMap::new(fft_out, "FFT power", |bins: Vec<Complex>, tags| {
         vec![(
             bins.iter()
@@ -171,7 +171,7 @@ fn spectrum_display(
             tags,
         )]
     });
-    graph.add(Box::new(power));
+    graph.add(power);
     let rows_done = display(graph, power_out, SPECTRUM);
     Ok((filtered, rows_done))
 }
@@ -205,7 +205,7 @@ fn display(
 ) -> Receiver<()> {
     let (frames, rows) = async_channel::bounded(2);
     let (done, finished) = async_channel::bounded(1);
-    graph.add(Box::new(DisplaySink { src: input, frames }));
+    graph.add(DisplaySink { src: input, frames });
     spawn_local(async move {
         while let Ok(row) = rows.recv().await {
             if send_message(WorkerToMain::Floats(name.into(), vec![row]))
