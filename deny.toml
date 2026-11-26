@@ -4,6 +4,13 @@ no-default-features = false
 
 [advisories]
 ignore = [
+        # Unmaintained deps of stderrlog.
+        # Should be fixed when successor to 0.6.0 is released.
+        "RUSTSEC-2026-0543", # chrono
+
+        "RUSTSEC-2026-0542", # humantime, via console-subscriber
+
+        "RUSTSEC-2026-0592", # url
 ]
 
 [licenses]
